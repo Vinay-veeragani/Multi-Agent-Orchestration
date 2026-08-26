@@ -98,6 +98,11 @@ class MockRule:
             distinctive.
         match_user: Substring that must appear in the latest user message.
         match_pattern: Regex applied to the whole rendered conversation.
+        match_request_key: Substring of the request key, which the agent
+            runtime sets to ``{execution}:{node}:{agent}:{iteration}``. This is
+            the only reliable way to target one specific agent: derived agents
+            share almost identical system prompts, so matching on prompt text
+            cannot tell ``pricing_agent`` from ``research_agent``.
         responses: Content to return, one per call. The final entry repeats once
             exhausted, so a rule does not have to enumerate every possible call.
         fault: Failure to inject.
@@ -109,6 +114,7 @@ class MockRule:
     match_system: str | None = None
     match_user: str | None = None
     match_pattern: str | None = None
+    match_request_key: str | None = None
     responses: tuple[str, ...] = ()
     fault: Fault | None = None
     latency_seconds: float = 0.0
@@ -123,13 +129,28 @@ class MockRule:
         without the author having to set priorities by hand.
         """
         return sum(
-            1 for condition in (self.match_system, self.match_user, self.match_pattern) if condition
+            1
+            for condition in (
+                self.match_system,
+                self.match_user,
+                self.match_pattern,
+                self.match_request_key,
+            )
+            if condition
         )
 
-    def matches(self, system_text: str, user_text: str, full_text: str) -> bool:
+    def matches(
+        self,
+        system_text: str,
+        user_text: str,
+        full_text: str,
+        request_key: str = "",
+    ) -> bool:
         if self.match_system and self.match_system.lower() not in system_text.lower():
             return False
         if self.match_user and self.match_user.lower() not in user_text.lower():
+            return False
+        if self.match_request_key and self.match_request_key.lower() not in request_key.lower():
             return False
         return not (
             self.match_pattern and not re.search(self.match_pattern, full_text, re.IGNORECASE)
@@ -220,7 +241,7 @@ class MockProvider(LLMProvider):
         user_text = user_messages[-1] if user_messages else ""
         full_text = "\n".join(m.content for m in request.messages)
 
-        rule = self._select_rule(system_text, user_text, full_text)
+        rule = self._select_rule(system_text, user_text, full_text, request.request_key or "")
 
         async with self._lock:
             attempt = self._rule_counts.get(rule.name if rule else "__default__", 0) + 1
@@ -282,9 +303,11 @@ class MockProvider(LLMProvider):
 
     # -- internals ---------------------------------------------------------
 
-    def _select_rule(self, system_text: str, user_text: str, full_text: str) -> MockRule | None:
+    def _select_rule(
+        self, system_text: str, user_text: str, full_text: str, request_key: str = ""
+    ) -> MockRule | None:
         for rule in self._rules:
-            if rule.matches(system_text, user_text, full_text):
+            if rule.matches(system_text, user_text, full_text, request_key):
                 return rule
         if self._strict:
             raise ConfigurationError(
@@ -616,6 +639,30 @@ class MockScript:
                 responses=responses,
                 fault=fault,
                 latency_seconds=latency_seconds,
+            )
+        )
+        return self
+
+    def on_agent_id(
+        self,
+        agent_id: str,
+        *responses: str,
+        fault: Fault | None = None,
+        latency_seconds: float = 0.0,
+    ) -> MockScript:
+        """Script replies for one specific agent, matched by id.
+
+        Preferred over :meth:`on_agent` whenever derived agents are in play: they
+        share a system prompt, so only the request key distinguishes them.
+        """
+        self.rules.append(
+            MockRule(
+                name=f"agent_id:{agent_id}",
+                match_request_key=f":{agent_id}:",
+                responses=responses,
+                fault=fault,
+                latency_seconds=latency_seconds,
+                priority=5,
             )
         )
         return self

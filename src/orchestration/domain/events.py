@@ -51,6 +51,15 @@ _EVENT_SEVERITY: dict[EventType, EventSeverity] = {
 }
 
 
+def event_severity(event_type: EventType) -> EventSeverity:
+    """Severity implied by an event type.
+
+    Exposed so the bus can build an event directly without going through the
+    factory, while still deriving severity from one table.
+    """
+    return _EVENT_SEVERITY.get(event_type, EventSeverity.INFO)
+
+
 class ExecutionEvent(FrozenModel):
     """One immutable record of something that happened during an execution.
 
