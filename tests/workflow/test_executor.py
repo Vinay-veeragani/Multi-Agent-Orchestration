@@ -896,6 +896,9 @@ class TestCheckpointPoints:
         assert reasons.count(CheckpointReason.BEFORE_NODE) == 2
         assert reasons.count(CheckpointReason.AFTER_NODE_SUCCESS) == 2
         assert CheckpointReason.BEFORE_FINALIZATION in reasons
+        # The terminal status must itself be checkpointed, or a crash at
+        # completion leaves a finished run looking resumable.
+        assert reasons[-1] is CheckpointReason.EXECUTION_FINALIZED
 
     async def test_failed_node_is_checkpointed(self, harness_factory: HarnessFactory) -> None:
         provider = MockProvider(

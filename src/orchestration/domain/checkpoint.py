@@ -57,11 +57,16 @@ class Checkpoint(FrozenModel):
         """Stable digest over the payload that defines this checkpoint.
 
         Excludes the checkpoint's own id and timestamp -- otherwise every write
-        would be unique by construction and deduplication could never fire.
-        Also excludes ``updated_at`` inside the state for the same reason.
+        would be unique by construction and deduplication could never fire. The
+        state's ``updated_at`` and ``version`` are excluded for the same reason.
         """
         state = self.state.model_dump(mode="json")
-        state.pop("updated_at", None)
+        # Excluded because they are storage bookkeeping, not part of the logical
+        # snapshot. `version` in particular is bumped by the *write itself*, so
+        # including it would make every checkpoint hash unique and deduplication
+        # could never fire.
+        for bookkeeping in ("updated_at", "version"):
+            state.pop(bookkeeping, None)
         payload = {
             "execution_id": self.execution_id,
             "sequence": self.sequence,

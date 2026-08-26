@@ -232,6 +232,10 @@ class CheckpointReason(StrEnum):
     BEFORE_APPROVAL = "before_approval"
     AFTER_APPROVAL = "after_approval"
     BEFORE_FINALIZATION = "before_finalization"
+    #: Written after the terminal transition, so the persisted status matches
+    #: reality. Without it a crash at completion leaves a finished run looking
+    #: resumable.
+    EXECUTION_FINALIZED = "execution_finalized"
     AFTER_REPLAN = "after_replan"
     ON_CANCELLATION = "on_cancellation"
     ON_BUDGET_EXCEEDED = "on_budget_exceeded"

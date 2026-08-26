@@ -940,6 +940,10 @@ class WorkflowExecutor:
                 failed_nodes=blocking,
                 steps=result.steps,
             )
+            # Persist the terminal status. Without this the stored state would
+            # still read RUNNING, and resume would treat a finished execution as
+            # resumable and redo its finalisation.
+            await self._checkpoint(state, self.workflow, CheckpointReason.EXECUTION_FINALIZED, None)
             return
 
         if state.final_output is None:
@@ -955,6 +959,9 @@ class WorkflowExecutor:
             cost_usd=round(state.budget_usage.cost_usd, 6),
             total_tokens=state.budget_usage.total_tokens,
         )
+        # As above: the success must be durable, or a crash here leaves the run
+        # looking resumable when it is actually complete.
+        await self._checkpoint(state, self.workflow, CheckpointReason.EXECUTION_FINALIZED, None)
 
     def _derive_final_output(self, state: ExecutionState) -> str:
         """Choose a final answer when no terminal node set one.
