@@ -9,6 +9,7 @@ stays in the runtime where it belongs.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Self
 
@@ -147,13 +148,29 @@ class AgentCapability(FrozenModel):
     #: Relative competence, used to break ties between candidate agents.
     proficiency: Score = 0.8
 
-    def matches(self, text: str) -> int:
-        """Count of this capability's keywords present in ``text``.
+    def matched_terms(self, text: str) -> frozenset[str]:
+        """Distinct words in ``text`` that this capability's keywords match.
 
-        A count rather than a boolean so the heuristic router can rank.
+        Returns matched *terms*, not matched keywords. Counting keywords lets an
+        agent inflate its own score by declaring redundant variants -- listing
+        both ``feature`` and ``features`` would score twice against the single
+        word "features". Scoring by the terms actually covered makes the ranking
+        depend on the match rather than on how the keyword list was written.
+
+        Matching is prefix-based in both directions so simple morphology
+        (price/pricing, feature/features) lands on the same term.
         """
-        lowered = text.lower()
-        return sum(1 for kw in self.keywords if kw.lower() in lowered)
+        terms = {t for t in re.split(r"\W+", text.lower()) if len(t) > 1}
+        keywords = [k.lower() for k in self.keywords]
+        return frozenset(
+            term
+            for term in terms
+            if any(term.startswith(kw) or kw.startswith(term) for kw in keywords)
+        )
+
+    def matches(self, text: str) -> int:
+        """Number of distinct terms in ``text`` this capability covers."""
+        return len(self.matched_terms(text))
 
 
 class ToolInvocation(DomainModel):

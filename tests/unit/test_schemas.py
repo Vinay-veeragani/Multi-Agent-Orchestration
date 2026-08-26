@@ -514,7 +514,7 @@ class TestAgentDefinition:
             system_prompt="p",
             capabilities=(
                 AgentCapability(
-                    name="c", description="d", keywords=frozenset({"x"}), proficiency=1.0
+                    name="c", description="d", keywords=frozenset({"widget"}), proficiency=1.0
                 ),
             ),
         )
@@ -522,12 +522,12 @@ class TestAgentDefinition:
             update={
                 "capabilities": (
                     AgentCapability(
-                        name="c", description="d", keywords=frozenset({"x"}), proficiency=0.2
+                        name="c", description="d", keywords=frozenset({"widget"}), proficiency=0.2
                     ),
                 )
             }
         )
-        assert strong.capability_score("x") > weak.capability_score("x")
+        assert strong.capability_score("widget") > weak.capability_score("widget")
 
     def test_agent_with_no_capabilities_scores_zero(self) -> None:
         agent = AgentDefinition(id="a", name="A", description="d", system_prompt="p")

@@ -32,6 +32,9 @@ from orchestration.domain.model import RoutingCriteria
 from orchestration.domain.retry import DEFAULT_RETRY_POLICY, RetryPolicy
 from orchestration.domain.tool import AgentCapability, ToolPermission
 
+#: Agent kinds that reason over prior outputs instead of gathering new material.
+_SYNTHESIS_KINDS: frozenset[str] = frozenset({"analyst", "critic", "finalizer"})
+
 
 class AgentDefinition(TimestampedModel):
     """Registry entry describing one agent.
@@ -123,6 +126,26 @@ class AgentDefinition(TimestampedModel):
             return 0.0
         total = sum(cap.matches(text) * cap.proficiency for cap in self.capabilities)
         return round(total, 6)
+
+    def matched_terms(self, text: str) -> frozenset[str]:
+        """Union of the terms in ``text`` covered by any of this agent's capabilities.
+
+        Used by the heuristic router to decide whether two candidates cover
+        *different* aspects of a task and therefore deserve parallel branches.
+        """
+        covered: set[str] = set()
+        for capability in self.capabilities:
+            covered |= capability.matched_terms(text)
+        return frozenset(covered)
+
+    @property
+    def is_synthesis_agent(self) -> bool:
+        """Whether this agent consumes other agents' output rather than producing it.
+
+        A synthesiser has nothing to synthesise if it runs concurrently with the
+        work it depends on, so it is never a candidate for a parallel fan-out.
+        """
+        return self.kind in _SYNTHESIS_KINDS
 
     def required_model_capabilities(self) -> frozenset[ModelCapability]:
         """Model capabilities implied by this agent's configuration."""
