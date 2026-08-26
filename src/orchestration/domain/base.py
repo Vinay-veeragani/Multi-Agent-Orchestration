@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -153,7 +153,7 @@ class DomainModel(BaseModel):
         """Serialise to a JSON-safe dict suitable for a JSONB column."""
         return self.model_dump(mode="json")
 
-    def merged(self, **changes: Any) -> Any:
+    def merged(self, **changes: Any) -> Self:
         """Return a validated copy with ``changes`` applied.
 
         Unlike ``model_copy(update=...)``, this re-validates, so an invalid
