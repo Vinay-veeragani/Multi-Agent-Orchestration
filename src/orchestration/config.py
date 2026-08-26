@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     log_format: Literal["console", "json"] = "console"
 
     # --- postgres (required; no sqlite fallback by design) ---
-    pg_dsn: str = "postgresql+asyncpg://orchestrator:orch_local_dev_only@127.0.0.1:5432/orchestration"
+    pg_dsn: str = (
+        "postgresql+asyncpg://orchestrator:orch_local_dev_only@127.0.0.1:5432/orchestration"
+    )
     pg_test_dsn: str = (
         "postgresql+asyncpg://orchestrator:orch_local_dev_only@127.0.0.1:5432/orchestration_test"
     )
@@ -167,10 +169,10 @@ def reset_settings_cache() -> None:
     """Clear the settings cache (tests that monkeypatch the environment)."""
     get_settings.cache_clear()
 
+
 _DSN_CREDENTIALS = re.compile(r"://([^:/@]+):([^@]+)@")
 
 
 def _redact_dsn(dsn: str) -> str:
     """Replace the password component of a URL-style DSN with ``***``."""
     return _DSN_CREDENTIALS.sub(r"://\1:***@", dsn)
-
