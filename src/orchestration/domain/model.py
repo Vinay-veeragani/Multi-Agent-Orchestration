@@ -15,7 +15,14 @@ from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
-from orchestration.domain.base import BoundedText, DomainModel, FrozenModel, JsonDict, Slug
+from orchestration.domain.base import (
+    BoundedText,
+    DomainModel,
+    FrozenModel,
+    JsonDict,
+    ModelKey,
+    Slug,
+)
 from orchestration.domain.enums import MessageRole, ModelCapability, Provider
 
 
@@ -35,7 +42,7 @@ class ModelConfig(FrozenModel):
         supports_json_mode: Whether the provider can be asked to guarantee JSON.
     """
 
-    key: Slug
+    key: ModelKey
     provider: Provider
     model: str = Field(min_length=1, max_length=128)
     context_limit: int = Field(default=128_000, gt=0)
@@ -176,7 +183,7 @@ class LLMResponse(FrozenModel):
     """Provider-agnostic completion result."""
 
     content: BoundedText
-    model_key: Slug
+    model_key: ModelKey
     provider: Provider
     usage: TokenUsage = Field(default_factory=TokenUsage)
     cost_usd: float = Field(default=0.0, ge=0)
@@ -205,7 +212,7 @@ class EmbeddingResponse(FrozenModel):
     """Embedding vectors, aligned positionally with the request texts."""
 
     vectors: tuple[tuple[float, ...], ...]
-    model_key: Slug
+    model_key: ModelKey
     provider: Provider
     usage: TokenUsage = Field(default_factory=TokenUsage)
     cost_usd: float = Field(default=0.0, ge=0)
@@ -238,7 +245,7 @@ class RoutingCriteria(DomainModel):
     max_cost_per_mtok: float | None = Field(default=None, gt=0)
     min_context_limit: int | None = Field(default=None, gt=0)
     #: Explicit override; when set the router returns this key or fails.
-    pinned_model: Slug | None = None
+    pinned_model: ModelKey | None = None
 
 
 class ModelSelection(FrozenModel):
@@ -246,7 +253,7 @@ class ModelSelection(FrozenModel):
 
     model: ModelConfig
     reason: str = Field(max_length=500)
-    considered: tuple[Slug, ...] = ()
+    considered: tuple[ModelKey, ...] = ()
     criteria: RoutingCriteria | None = None
 
     def as_event_payload(self) -> dict[str, Any]:

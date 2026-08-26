@@ -19,6 +19,7 @@ from orchestration.domain.base import (
     DomainModel,
     FrozenModel,
     JsonDict,
+    ModelKey,
     Score,
     Slug,
     TimestampedModel,
@@ -59,7 +60,7 @@ class AgentDefinition(TimestampedModel):
     system_prompt: BoundedText = Field(min_length=1)
     routing_criteria: RoutingCriteria = Field(default_factory=RoutingCriteria)
     #: Pinned model key; when set it overrides the router entirely.
-    model_key: Slug | None = None
+    model_key: ModelKey | None = None
     timeout_seconds: float = Field(default=120.0, gt=0, le=3_600.0)
     retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY
     budget: Budget | None = None
@@ -205,7 +206,7 @@ class AgentInvocation(DomainModel):
     task_input: BoundedText = ""
     output: AgentOutput | None = None
     error: JsonDict | None = None
-    model_key: Slug | None = None
+    model_key: ModelKey | None = None
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     cost_usd: float = Field(default=0.0, ge=0)

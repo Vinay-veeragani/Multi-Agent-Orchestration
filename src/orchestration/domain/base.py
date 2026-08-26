@@ -108,6 +108,22 @@ Slug = Annotated[
     ),
 ]
 
+#: A model registry key. Unlike :data:`Slug` this permits ``.`` and ``:``, because
+#: real model identifiers contain them (``gemini-2.5-flash``, ``llama3.1:8b``).
+#: Kept separate rather than widening ``Slug``: node and agent ids must stay
+#: dot-free, since workflow conditions address state with dotted paths
+#: (``outputs.research.confidence``) and a dotted id would be ambiguous there.
+ModelKey = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        to_lower=True,
+        min_length=1,
+        max_length=96,
+        pattern=r"^[a-z0-9][a-z0-9._:-]*$",
+    ),
+]
+
 #: Free-text bounded so a runaway LLM response cannot become an unbounded row.
 BoundedText = Annotated[str, StringConstraints(max_length=200_000)]
 

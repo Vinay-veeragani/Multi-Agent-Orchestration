@@ -17,7 +17,14 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from orchestration.domain.base import BoundedText, DomainModel, JsonDict, Score, Slug
+from orchestration.domain.base import (
+    BoundedText,
+    DomainModel,
+    JsonDict,
+    ModelKey,
+    Score,
+    Slug,
+)
 from orchestration.domain.enums import SupervisorAction
 from orchestration.domain.workflow import DynamicPlan
 
@@ -181,7 +188,7 @@ class RoutingAttempt(DomainModel):
     valid: bool = False
     validation_errors: tuple[str, ...] = ()
     decision: RoutingDecision | None = None
-    model_key: Slug | None = None
+    model_key: ModelKey | None = None
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     cost_usd: float = Field(default=0.0, ge=0)
