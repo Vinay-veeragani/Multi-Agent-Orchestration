@@ -59,6 +59,7 @@ from orchestration.domain.execution import ExecutionError, ExecutionState
 from orchestration.domain.tool import ToolResult
 from orchestration.domain.workflow import Workflow, WorkflowNode
 from orchestration.errors import (
+    ApprovalRejectedError,
     ApprovalRequired,
     BudgetExceededError,
     EngineTimeoutError,
@@ -83,8 +84,21 @@ CheckpointWriter = Callable[
     [ExecutionState, Workflow, CheckpointReason, str | None], Awaitable[None]
 ]
 
-#: Creates an approval request and returns its id.
-ApprovalCreator = Callable[[str, str, str, JsonDict, str], Awaitable[str]]
+#: Node statuses from which a node may (re-)enter the ready set.
+#:
+#: ``WAITING_FOR_APPROVAL`` is included because a resumed execution re-runs the
+#: node that paused it: that is how the gate gets a chance to read the human
+#: decision. Without it the paused node would never be scheduled again and the
+#: execution would stall permanently after an approval was granted.
+_RUNNABLE_NODE_STATUSES = frozenset({NodeStatus.PENDING, NodeStatus.WAITING_FOR_APPROVAL})
+
+#: Resolves the approval for a node, returning ``(status, approval_id, note)``
+#: where status is ``"granted"``, ``"rejected"`` or ``"pending"``.
+#:
+#: A *gate* rather than a creator: a resumed execution re-runs the node that
+#: paused it, so the node must be able to read what a human decided instead of
+#: raising again and pausing forever.
+ApprovalGate = Callable[[str, str, str], Awaitable[tuple[str, str, str]]]
 
 
 async def _noop_checkpoint(
@@ -186,7 +200,9 @@ class WorkflowExecutor:
         events: Event recorder bound to this execution.
         meter: Budget enforcement.
         checkpoint: Persists state. Defaults to a no-op for in-memory runs.
-        approval_creator: Creates approval records when a gate is reached.
+        approval_gate: Resolves approvals for approval nodes. Without one, an
+            approval node always pauses -- correct for an in-memory run with no
+            durable store, since there is nowhere for a decision to live.
         cancel_token: Cooperative cancellation.
         max_concurrent_nodes: Cap on simultaneously running nodes.
         sandbox_root: Filesystem root handed to tools.
@@ -204,7 +220,7 @@ class WorkflowExecutor:
         events: ExecutionEventRecorder,
         meter: BudgetMeter,
         checkpoint: CheckpointWriter = _noop_checkpoint,
-        approval_creator: ApprovalCreator | None = None,
+        approval_gate: ApprovalGate | None = None,
         cancel_token: CancelToken | None = None,
         max_concurrent_nodes: int = 8,
         sandbox_root: Path | None = None,
@@ -217,7 +233,7 @@ class WorkflowExecutor:
         self._events = events
         self._meter = meter
         self._checkpoint = checkpoint
-        self._create_approval = approval_creator
+        self._approval_gate = approval_gate
         self._cancel = cancel_token or CancelToken()
         self._semaphore = asyncio.Semaphore(max_concurrent_nodes)
         self._sandbox_root = sandbox_root or Path("./.artifacts")
@@ -316,7 +332,7 @@ class WorkflowExecutor:
         ready: list[WorkflowNode] = []
         for node_id, node in sorted(self._graph.nodes.items()):
             node_state = state.node_states.get(node_id)
-            if node_state is not None and node_state.status is not NodeStatus.PENDING:
+            if node_state is not None and node_state.status not in _RUNNABLE_NODE_STATUSES:
                 continue
             if not self._graph.dependencies_satisfied(node_id, state, active_edges=active):
                 continue
@@ -753,26 +769,53 @@ class WorkflowExecutor:
         )
 
     async def _run_approval_node(self, state: ExecutionState, node: WorkflowNode) -> NodeOutcome:
-        """Raise :class:`ApprovalRequired` so the main loop can pause durably.
+        """Consult the approval gate, and pause durably if undecided.
 
-        Deliberately does not await a decision here. Awaiting would tie the pause
-        to this process's lifetime, and the whole point of the design is that it
-        survives a restart.
+        Deliberately never awaits a decision. Awaiting would tie the pause to this
+        process's lifetime, and the point of the design is that it survives a
+        restart -- so the node returns control to the main loop, which checkpoints
+        and stops. When the execution is later resumed, this same node runs again
+        and the gate reports whatever a human decided in the meantime.
         """
-        approval_id = ""
-        if self._create_approval is not None:
-            approval_id = await self._create_approval(
-                state.execution_id,
-                node.id,
-                f"node:{node.id}",
-                {"node": node.id, "name": node.effective_name},
-                node.approval_reason or f"workflow node {node.id!r} requires approval",
+        reason = node.approval_reason or f"workflow node {node.id!r} requires human approval"
+
+        if self._approval_gate is None:
+            # No durable store: there is nowhere for a decision to live, so the
+            # only honest behaviour is to pause and stay paused.
+            raise ApprovalRequired(reason, approval_id="", node_id=node.id)
+
+        status, approval_id, note = await self._approval_gate(state.execution_id, node.id, reason)
+
+        if status == "granted":
+            await self._events.emit(
+                EventType.APPROVAL_GRANTED,
+                node_id=node.id,
+                message=f"approval {approval_id} granted; proceeding",
+                approval_id=approval_id,
             )
-        raise ApprovalRequired(
-            node.approval_reason or f"node {node.id!r} requires human approval",
-            approval_id=approval_id,
-            node_id=node.id,
-        )
+            state.pending_approval_id = None
+            return NodeOutcome(
+                node_id=node.id,
+                status=NodeStatus.SUCCEEDED,
+                output={"approved": True, "approval_id": approval_id, "note": note},
+            )
+
+        if status == "rejected":
+            await self._events.emit(
+                EventType.APPROVAL_REJECTED,
+                node_id=node.id,
+                message=f"approval {approval_id} was refused: {note}",
+                approval_id=approval_id,
+            )
+            # Terminal, not retryable: re-asking a reviewer who said no is not a
+            # recovery strategy.
+            raise ApprovalRejectedError(
+                f"node {node.id!r} was not approved: {note}",
+                approval_id=approval_id,
+                node_id=node.id,
+            )
+
+        raise ApprovalRequired(reason, approval_id=approval_id, node_id=node.id)
 
     async def _run_terminal_node(self, state: ExecutionState, node: WorkflowNode) -> NodeOutcome:
         """Record the final output from the most recent upstream result."""
@@ -810,10 +853,15 @@ class WorkflowExecutor:
                     message=str(outcome.approval_required),
                     approval_id=node_state.approval_id,
                 )
+                # Transition *then* checkpoint. Checkpointing first would persist
+                # the pause with status RUNNING, so an operator (and the API)
+                # would see a running execution that is actually parked waiting
+                # for a human -- the same defect as failing to persist a terminal
+                # status, and equally misleading.
+                state.transition_to(ExecutionStatus.WAITING_FOR_APPROVAL)
                 await self._checkpoint(
                     state, self.workflow, CheckpointReason.BEFORE_APPROVAL, outcome.node_id
                 )
-                state.transition_to(ExecutionStatus.WAITING_FOR_APPROVAL)
                 paused = True
                 continue
 

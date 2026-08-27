@@ -72,7 +72,7 @@ class Harness:
         workflow: Workflow,
         *,
         max_concurrent_nodes: int = 8,
-        approval_creator: Callable[..., object] | None = None,
+        approval_gate: Callable[..., object] | None = None,
         max_steps: int = 200,
     ) -> WorkflowExecutor:
         return WorkflowExecutor(
@@ -83,7 +83,7 @@ class Harness:
             events=ExecutionEventRecorder(bus=self.bus, execution_id="exec_test"),
             meter=self.meter,
             checkpoint=self._write_checkpoint,
-            approval_creator=approval_creator,  # type: ignore[arg-type]
+            approval_gate=approval_gate,  # type: ignore[arg-type]
             cancel_token=self.cancel,
             max_concurrent_nodes=max_concurrent_nodes,
             sandbox_root=self.sandbox,
