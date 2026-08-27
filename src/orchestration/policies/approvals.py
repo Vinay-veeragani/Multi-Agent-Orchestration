@@ -32,6 +32,7 @@ from orchestration.domain.base import JsonDict
 from orchestration.domain.enums import ApprovalStatus, EventType, RiskLevel
 from orchestration.errors import ApprovalRejectedError, NotFoundError
 from orchestration.events.bus import EventBus
+from orchestration.observability.metrics import record_approval
 from orchestration.persistence.database import Database
 from orchestration.persistence.repositories import ApprovalRepository
 
@@ -269,6 +270,7 @@ class ApprovalService:
                 tool=decided.tool,
                 payload={"approval_id": decided.id, "modified": bool(modified_arguments)},
             )
+        record_approval(decided.status.value)
         return decided
 
     async def reject(
@@ -287,6 +289,7 @@ class ApprovalService:
                 tool=decided.tool,
                 payload={"approval_id": decided.id, "note": note},
             )
+        record_approval(decided.status.value)
         return decided
 
     # -- queries -----------------------------------------------------------
@@ -325,6 +328,7 @@ class ApprovalService:
                 node_id=request.node_id,
                 payload={"approval_id": request.id},
             )
+        record_approval(ApprovalStatus.EXPIRED.value)
         return await self.get(request.id)
 
     # -- executor integration ---------------------------------------------

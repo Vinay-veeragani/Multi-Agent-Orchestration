@@ -36,6 +36,7 @@ from orchestration.errors import (
     NotFoundError,
 )
 from orchestration.events.bus import EventBus
+from orchestration.observability.tracing import checkpoint_span
 from orchestration.persistence.database import Database
 from orchestration.persistence.repositories import (
     CheckpointRepository,
@@ -111,6 +112,20 @@ class CheckpointManager:
             # a long run's checkpoint table proportional to actual progress.
             return None
 
+        with checkpoint_span(state.execution_id, reason=reason.value):
+            return await self._write_traced(
+                state, workflow, reason, node_id, candidate, content_hash
+            )
+
+    async def _write_traced(
+        self,
+        state: ExecutionState,
+        workflow: Workflow,
+        reason: CheckpointReason,
+        node_id: str | None,
+        candidate: Checkpoint,
+        content_hash: str,
+    ) -> Checkpoint | None:
         async with self._db.transaction() as session:
             checkpoints = CheckpointRepository(session)
             states = ExecutionStateRepository(session)

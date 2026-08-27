@@ -70,6 +70,14 @@ from orchestration.errors import (
     to_error_dict,
 )
 from orchestration.events.bus import ExecutionEventRecorder
+from orchestration.observability.metrics import (
+    record_budget_exceeded,
+    record_execution_finished,
+    record_execution_started,
+    record_node_execution,
+    record_retry,
+)
+from orchestration.observability.tracing import execution_span, retry_span
 from orchestration.tools.base import ToolContext
 from orchestration.tools.registry import ToolRegistry
 from orchestration.workflow.conditions import (
@@ -256,7 +264,13 @@ class WorkflowExecutor:
         computation derives everything from persisted node statuses, which is what
         makes resume work without a separate code path.
         """
+        with execution_span(state.execution_id, state.workflow_id, state.task.description):
+            return await self._run_traced(state)
+
+    async def _run_traced(self, state: ExecutionState) -> ExecutionResult:
         result = ExecutionResult(state=state, workflow=self.workflow)
+        if state.status is ExecutionStatus.PENDING:
+            record_execution_started()
 
         if state.status is ExecutionStatus.PENDING:
             state.transition_to(ExecutionStatus.RUNNING)
@@ -314,6 +328,9 @@ class WorkflowExecutor:
             await self._handle_cancellation(state, exc)
         except BudgetExceededError as exc:
             await self._handle_budget_exhaustion(state, exc)
+
+        if state.status.is_terminal:
+            record_execution_finished(state.status.value, duration_seconds=state.elapsed_seconds)
 
         return result
 
@@ -489,6 +506,7 @@ class WorkflowExecutor:
                     delay = policy.backoff_for(attempt, exc)
                     state.record_retry(node.id)
                     self._meter.record_retry()
+                    record_retry(node.kind.value, str(error["code"]))
                     await self._events.emit(
                         EventType.RETRY_STARTED,
                         node_id=node.id,
@@ -502,7 +520,13 @@ class WorkflowExecutor:
                         error_code=error["code"],
                     )
                     if delay > 0:
-                        await asyncio.sleep(delay)
+                        with retry_span(
+                            state.execution_id,
+                            node.id,
+                            attempt=attempt,
+                            error_code=str(error["code"]),
+                        ):
+                            await asyncio.sleep(delay)
                     self._cancel.raise_if_cancelled()
 
     async def _dispatch(
@@ -867,6 +891,7 @@ class WorkflowExecutor:
 
             if outcome.succeeded:
                 node_state.mark_succeeded(confidence=outcome.confidence)
+                record_node_execution(node.kind.value, "succeeded")
                 if outcome.output is not None:
                     state.record_agent_output(
                         outcome.node_id, outcome.output, output_key=node.output_key
@@ -890,6 +915,7 @@ class WorkflowExecutor:
                 )
             else:
                 node_state.mark_failed(outcome.error or {"code": "unknown", "message": ""})
+                record_node_execution(node.kind.value, "failed")
                 await self._checkpoint(
                     state, self.workflow, CheckpointReason.AFTER_NODE_FAILURE, outcome.node_id
                 )
@@ -1056,6 +1082,7 @@ class WorkflowExecutor:
             limit=exc.limit,
             used=exc.used,
         )
+        record_budget_exceeded(exc.dimension)
         await self._checkpoint(state, self.workflow, CheckpointReason.ON_BUDGET_EXCEEDED, None)
 
     # -- helpers -----------------------------------------------------------

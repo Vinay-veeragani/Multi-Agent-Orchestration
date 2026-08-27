@@ -45,6 +45,8 @@ from orchestration.errors import (
     SchemaViolationError,
 )
 from orchestration.llm.factory import LLMClient
+from orchestration.observability.metrics import record_routing_decision, record_schema_repair
+from orchestration.observability.tracing import supervisor_span
 from orchestration.routing.model_router import ModelRouter
 from orchestration.supervisor.heuristic import HeuristicRouter
 from orchestration.supervisor.prompt import build_supervisor_messages
@@ -110,6 +112,28 @@ class Supervisor:
         proceed, and the degradation is visible in events and benchmarks rather
         than being silently smoothed over.
         """
+        with supervisor_span(state.execution_id, step=len(state.node_states)):
+            outcome = await self._decide_traced(
+                state, budget=budget, extra_instruction=extra_instruction, workflow=workflow
+            )
+        record_routing_decision(outcome.decision.action.value, degraded=outcome.degraded)
+        # A repair was attempted whenever generate_structured needed more than
+        # one attempt to produce schema-valid output. It "succeeded" if that
+        # attempt is what the outcome is built from (no fallback); it "failed"
+        # if every attempt was exhausted and the heuristic router took over.
+        repair_attempted = any(a.attempt > 1 for a in outcome.attempts)
+        if repair_attempted:
+            record_schema_repair(succeeded=not outcome.used_fallback)
+        return outcome
+
+    async def _decide_traced(
+        self,
+        state: ExecutionState,
+        *,
+        budget: BudgetSnapshot | None = None,
+        extra_instruction: str | None = None,
+        workflow: Workflow | None = None,
+    ) -> RoutingOutcome:
         attempts: list[RoutingAttempt] = []
         agent_summaries = self._agent_summaries(state)
         tool_specs = self._tool_specs()

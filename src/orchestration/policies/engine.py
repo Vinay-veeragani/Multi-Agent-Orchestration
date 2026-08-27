@@ -38,6 +38,7 @@ from orchestration.domain.tool import (
     ToolPermission,
 )
 from orchestration.errors import ConfigurationError, NotFoundError
+from orchestration.observability.metrics import record_policy_decision
 from orchestration.tools.registry import ToolRegistry
 
 
@@ -157,6 +158,11 @@ class PolicyEngine:
         Configuration errors (an unknown agent) still raise, since those are bugs
         rather than expected outcomes.
         """
+        decision = self._evaluate(agent_id, tool, arguments)
+        record_policy_decision(decision.effect.value)
+        return decision
+
+    def _evaluate(self, agent_id: str, tool: str, arguments: JsonDict) -> PolicyDecision:
         definition = self._agents.try_get(agent_id)
         if definition is None:
             raise NotFoundError(f"policy evaluation for unknown agent {agent_id!r}", agent=agent_id)

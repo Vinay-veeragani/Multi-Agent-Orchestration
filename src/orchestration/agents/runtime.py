@@ -54,6 +54,17 @@ from orchestration.errors import (
 )
 from orchestration.llm.base import extract_json_object
 from orchestration.llm.factory import LLMClient
+from orchestration.observability.metrics import (
+    record_agent_invocation,
+    record_llm_call,
+    record_tool_invocation,
+)
+from orchestration.observability.tracing import (
+    agent_span,
+    annotate_llm_usage,
+    llm_call_span,
+    tool_span,
+)
 from orchestration.routing.model_router import ModelRouter
 from orchestration.tools.base import ToolContext
 from orchestration.tools.registry import ToolRegistry
@@ -141,6 +152,14 @@ class AgentRuntime:
 
     async def run(self, definition: AgentDefinition, context: AgentRunContext) -> AgentRunResult:
         """Execute one agent to completion, a hard stop, or a suspension."""
+        with agent_span(
+            context.execution_id, definition.id, node_id=context.node_id, attempt=context.attempt
+        ):
+            return await self._run_traced(definition, context)
+
+    async def _run_traced(
+        self, definition: AgentDefinition, context: AgentRunContext
+    ) -> AgentRunResult:
         if not definition.enabled:
             raise ConfigurationError(f"agent {definition.id!r} is disabled", agent=definition.id)
 
@@ -166,16 +185,37 @@ class AgentRuntime:
                 invocation.iterations = iteration
                 await self._check_budget(f"agent:{definition.id}:iteration:{iteration}")
 
-                response = await self._llm.complete(
-                    LLMRequest(
-                        messages=tuple(messages),
-                        model=model,
-                        tools=tool_schemas,
-                        timeout_seconds=context.deadline_seconds,
-                        request_key=f"{context.seed}:{definition.id}:{iteration}",
-                        response_schema=None if tool_schemas else _AGENT_OUTPUT_SCHEMA,
-                    ),
-                    retry_policy=definition.retry_policy,
+                llm_started = time.perf_counter()
+                with llm_call_span(
+                    context.execution_id, model.key, model.provider.value, purpose="agent_turn"
+                ) as span:
+                    response = await self._llm.complete(
+                        LLMRequest(
+                            messages=tuple(messages),
+                            model=model,
+                            tools=tool_schemas,
+                            timeout_seconds=context.deadline_seconds,
+                            request_key=f"{context.seed}:{definition.id}:{iteration}",
+                            response_schema=None if tool_schemas else _AGENT_OUTPUT_SCHEMA,
+                        ),
+                        retry_policy=definition.retry_policy,
+                    )
+                    llm_elapsed = time.perf_counter() - llm_started
+                    annotate_llm_usage(
+                        span,
+                        input_tokens=response.usage.input_tokens,
+                        output_tokens=response.usage.output_tokens,
+                        cost_usd=response.cost_usd,
+                        latency_seconds=llm_elapsed,
+                    )
+                record_llm_call(
+                    model.provider.value,
+                    model.key,
+                    "succeeded",
+                    duration_seconds=llm_elapsed,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    cost_usd=response.cost_usd,
                 )
                 invocation.input_tokens += response.usage.input_tokens
                 invocation.output_tokens += response.usage.output_tokens
@@ -453,24 +493,33 @@ class AgentRuntime:
         started = time.perf_counter()
         attempts = 0
         policy = tool.spec.retry_policy
-        while True:
-            attempts += 1
-            async with self._tool_semaphore:
-                try:
-                    output = await tool.invoke(call.arguments, tool_context)
-                except Exception as exc:
-                    if not policy.should_retry(attempts, exc):
-                        raise
-                    delay = policy.backoff_for(attempts, exc)
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                    continue
-            return ToolResult.success(
-                call.name,
-                output,
-                duration_seconds=round(time.perf_counter() - started, 6),
-                attempts=attempts,
-            )
+        with tool_span(
+            context.execution_id, call.name, agent_id=definition.id, risk=tool.spec.risk.value
+        ):
+            while True:
+                attempts += 1
+                async with self._tool_semaphore:
+                    try:
+                        output = await tool.invoke(call.arguments, tool_context)
+                    except Exception as exc:
+                        if not policy.should_retry(attempts, exc):
+                            record_tool_invocation(
+                                call.name, "failed", duration_seconds=time.perf_counter() - started
+                            )
+                            raise
+                        delay = policy.backoff_for(attempts, exc)
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                        continue
+                record_tool_invocation(
+                    call.name, "succeeded", duration_seconds=time.perf_counter() - started
+                )
+                return ToolResult.success(
+                    call.name,
+                    output,
+                    duration_seconds=round(time.perf_counter() - started, 6),
+                    attempts=attempts,
+                )
 
     @staticmethod
     def _render_tool_results(results: Sequence[ToolResult]) -> str:
@@ -534,15 +583,36 @@ class AgentRuntime:
                 "not establish in gaps."
             )
         )
-        response = await self._llm.complete(
-            LLMRequest(
-                messages=tuple(messages),
-                model=model,
-                response_schema=_AGENT_OUTPUT_SCHEMA,
-                timeout_seconds=context.deadline_seconds,
-                request_key=f"{context.seed}:{definition.id}:final",
-            ),
-            retry_policy=definition.retry_policy,
+        final_started = time.perf_counter()
+        with llm_call_span(
+            context.execution_id, model.key, model.provider.value, purpose="final_answer"
+        ) as span:
+            response = await self._llm.complete(
+                LLMRequest(
+                    messages=tuple(messages),
+                    model=model,
+                    response_schema=_AGENT_OUTPUT_SCHEMA,
+                    timeout_seconds=context.deadline_seconds,
+                    request_key=f"{context.seed}:{definition.id}:final",
+                ),
+                retry_policy=definition.retry_policy,
+            )
+            final_elapsed = time.perf_counter() - final_started
+            annotate_llm_usage(
+                span,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                cost_usd=response.cost_usd,
+                latency_seconds=final_elapsed,
+            )
+        record_llm_call(
+            model.provider.value,
+            model.key,
+            "succeeded",
+            duration_seconds=final_elapsed,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            cost_usd=response.cost_usd,
         )
         invocation.input_tokens += response.usage.input_tokens
         invocation.output_tokens += response.usage.output_tokens
@@ -561,6 +631,9 @@ class AgentRuntime:
         invocation.output = output
         invocation.completed_at = utc_now()
         invocation.duration_seconds = round(time.perf_counter() - started, 6)
+        record_agent_invocation(
+            invocation.agent_id, status.value, duration_seconds=invocation.duration_seconds
+        )
         return AgentRunResult(
             invocation=invocation, output=output, tool_results=tuple(tool_results)
         )
