@@ -37,6 +37,7 @@ from orchestration.domain.approval import ApprovalRequest
 from orchestration.domain.base import JsonDict, utc_now
 from orchestration.domain.checkpoint import Checkpoint
 from orchestration.domain.enums import ApprovalStatus, ExecutionStatus
+from orchestration.domain.evaluation import BenchmarkReport
 from orchestration.domain.events import EventFilter, ExecutionEvent
 from orchestration.domain.execution import ExecutionState
 from orchestration.domain.tool import ToolInvocation, ToolSpec
@@ -47,6 +48,7 @@ from orchestration.persistence.tables import (
     AgentInvocationRow,
     AgentRow,
     ApprovalRow,
+    BenchmarkRunRow,
     CheckpointRow,
     ExecutionEventRow,
     ExecutionRow,
@@ -1062,3 +1064,56 @@ class ApprovalRepository:
             decided_at=row.decided_at,
             expires_at=row.expires_at,
         )
+
+
+class BenchmarkRepository:
+    """Persistence for benchmark reports.
+
+    A benchmark run is stored whole, as one JSONB document -- there is no
+    relational projection because nothing queries into the middle of a report;
+    a run is always read back as the complete thing it was produced as.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save(self, report: BenchmarkReport) -> BenchmarkReport:
+        self._session.add(
+            BenchmarkRunRow(
+                id=report.id,
+                git_sha=report.git_sha,
+                provider_note=report.provider_note,
+                scenario_count=report.scenario_count,
+                report=report.model_dump(mode="json"),
+                started_at=report.started_at,
+                completed_at=report.completed_at,
+            )
+        )
+        return report
+
+    async def get(self, report_id: str) -> BenchmarkReport:
+        row = await self._session.get(BenchmarkRunRow, report_id)
+        if row is None:
+            raise NotFoundError(f"benchmark run {report_id!r} not found", benchmark_run=report_id)
+        return BenchmarkReport.model_validate(row.report)
+
+    async def list_recent(self, *, limit: int = 20) -> list[JsonDict]:
+        rows = (
+            (
+                await self._session.execute(
+                    select(BenchmarkRunRow).order_by(BenchmarkRunRow.created_at.desc()).limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "git_sha": r.git_sha,
+                "scenario_count": r.scenario_count,
+                "started_at": r.started_at.isoformat(),
+                "completed_at": r.completed_at.isoformat(),
+            }
+            for r in rows
+        ]

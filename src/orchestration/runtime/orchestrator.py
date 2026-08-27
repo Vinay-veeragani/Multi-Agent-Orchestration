@@ -44,6 +44,7 @@ from orchestration.domain.enums import (
     SupervisorAction,
 )
 from orchestration.domain.execution import ExecutionState
+from orchestration.domain.retry import DEFAULT_RETRY_POLICY, RetryPolicy
 from orchestration.domain.routing import RoutingDecision
 from orchestration.domain.workflow import Workflow, WorkflowEdge, WorkflowNode
 from orchestration.errors import ApprovalRejectedError, ApprovalRequired, ExecutionCancelledError
@@ -134,6 +135,12 @@ class ExecutionOrchestrator:
         checkpoint: Persists state; a fresh :class:`WorkflowExecutor` is built
             per turn but they all write through the same checkpoint function.
         max_turns: Hard cap on supervisor turns.
+        node_retry_policy: When set, overrides the retry policy of every node
+            compiled from a ``delegate``/``parallel_delegate`` decision (a
+            replan's own nodes keep whatever the plan specified). Exists for
+            the evaluation benchmark, which compares otherwise-identical runs
+            with retry enabled against retry disabled (``max_attempts=1``);
+            production callers should leave this unset.
     """
 
     def __init__(
@@ -151,6 +158,7 @@ class ExecutionOrchestrator:
         sandbox_root: Path | None = None,
         max_concurrent_nodes: int = 8,
         max_turns: int = MAX_SUPERVISOR_TURNS,
+        node_retry_policy: RetryPolicy | None = None,
     ) -> None:
         self._supervisor = supervisor
         self._agents = agents
@@ -164,6 +172,7 @@ class ExecutionOrchestrator:
         self._sandbox_root = sandbox_root
         self._max_concurrent_nodes = max_concurrent_nodes
         self._max_turns = max_turns
+        self._node_retry_policy = node_retry_policy
 
     async def run(
         self, state: ExecutionState, workflow: Workflow | None = None
@@ -316,6 +325,7 @@ class ExecutionOrchestrator:
         decision run in parallel because they share the same incoming edges.
         """
         frontier = self._frontier(workflow)
+        retry_policy = self._node_retry_policy or DEFAULT_RETRY_POLICY
         new_nodes = tuple(
             WorkflowNode(
                 id=self._unique_node_id(workflow, target.agent_id),
@@ -323,6 +333,7 @@ class ExecutionOrchestrator:
                 agent_id=target.agent_id,
                 input_template=target.instruction,
                 output_key=target.output_key or target.agent_id,
+                retry_policy=retry_policy,
             )
             for target in decision.targets
         )
@@ -397,6 +408,8 @@ class ExecutionOrchestrator:
             )
         except ApprovalRequired as pending:
             state.pending_approval_id = pending.approval_id
+            if pending.approval_id not in state.approvals:
+                state.approvals = (*state.approvals, pending.approval_id)
             await self._checkpoint(
                 state, workflow, CheckpointReason.BEFORE_APPROVAL, None
             )

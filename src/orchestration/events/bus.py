@@ -251,8 +251,17 @@ class ExecutionEventRecorder:
         node_id: str | None = None,
         agent_id: str | None = None,
         tool: str | None = None,
-        **payload: object,
+        payload: JsonDict | None = None,
+        **extra: object,
     ) -> ExecutionEvent:
+        """Record one event.
+
+        As with :meth:`EventBus.emit`, the payload may be supplied as a dict
+        (``payload=``) or as loose keywords -- without an explicit ``payload``
+        parameter here, ``payload=`` would itself have been swallowed by the
+        loose-keyword catch-all as a single nested key, rather than becoming
+        the event's payload.
+        """
         event = await self.bus.emit(
             event_type,
             execution_id=self.execution_id,
@@ -261,7 +270,7 @@ class ExecutionEventRecorder:
             agent_id=agent_id,
             tool=tool,
             trace_id=self.trace_id,
-            payload=dict(payload),
+            payload={**extra, **(payload or {})},
         )
         self.emitted.append(event)
         return event
