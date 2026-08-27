@@ -46,7 +46,7 @@ from orchestration.domain.enums import (
 from orchestration.domain.execution import ExecutionState
 from orchestration.domain.routing import RoutingDecision
 from orchestration.domain.workflow import Workflow, WorkflowEdge, WorkflowNode
-from orchestration.errors import ApprovalRejectedError, ApprovalRequired
+from orchestration.errors import ApprovalRejectedError, ApprovalRequired, ExecutionCancelledError
 from orchestration.events.bus import ExecutionEventRecorder
 from orchestration.observability.metrics import record_execution_started
 from orchestration.policies.approvals import ApprovalService
@@ -54,6 +54,7 @@ from orchestration.supervisor.supervisor import Supervisor
 from orchestration.tools.registry import ToolRegistry
 from orchestration.workflow.executor import (
     ApprovalGate,
+    CancelToken,
     CheckpointWriter,
     ExecutionResult,
     WorkflowExecutor,
@@ -138,6 +139,7 @@ class ExecutionOrchestrator:
         meter: BudgetMeter,
         events: ExecutionEventRecorder,
         checkpoint: CheckpointWriter = _noop_checkpoint,
+        cancel_token: CancelToken | None = None,
         sandbox_root: Path | None = None,
         max_concurrent_nodes: int = 8,
         max_turns: int = MAX_SUPERVISOR_TURNS,
@@ -150,6 +152,7 @@ class ExecutionOrchestrator:
         self._meter = meter
         self._events = events
         self._checkpoint = checkpoint
+        self._cancel = cancel_token or CancelToken()
         self._sandbox_root = sandbox_root
         self._max_concurrent_nodes = max_concurrent_nodes
         self._max_turns = max_turns
@@ -192,6 +195,13 @@ class ExecutionOrchestrator:
 
         for turn in range(1, self._max_turns + 1):
             result.turns = turn
+
+            try:
+                self._cancel.raise_if_cancelled()
+            except ExecutionCancelledError as exc:
+                await self._handle_cancellation(state, current, exc)
+                result.workflow = current
+                return result
 
             outcome = await self._supervisor.decide(state, workflow=current)
             decision = outcome.decision
@@ -261,8 +271,17 @@ class ExecutionOrchestrator:
             if exec_result.is_paused:
                 result.workflow = current
                 return result
-            if state.status.is_terminal:
+            if state.status in {ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED}:
+                # The executor's own verdict, imposed the moment this round's
+                # ready-set drained -- not a real conclusion; see
+                # _recover_from_round_drain. CANCELLED / BUDGET_EXCEEDED /
+                # TIMED_OUT are, by contrast, genuine engine-level stops (the
+                # cancel token fired, or the shared meter tripped) and must be
+                # allowed to end the run for real.
                 await self._recover_from_round_drain(state, current)
+            elif state.status.is_terminal:
+                result.workflow = current
+                return result
 
         # Turn limit reached without the supervisor concluding. Distinct from a
         # budget exhaustion: the *number of decisions* ran out, not tokens or
@@ -405,10 +424,27 @@ class ExecutionOrchestrator:
             meter=self._meter,
             checkpoint=self._checkpoint,
             approval_gate=self._approval_gate(),
+            cancel_token=self._cancel,
             max_concurrent_nodes=self._max_concurrent_nodes,
             sandbox_root=self._sandbox_root,
         )
         return await executor.run(state)
+
+    async def _handle_cancellation(
+        self, state: ExecutionState, workflow: Workflow, exc: ExecutionCancelledError
+    ) -> None:
+        """Mirror WorkflowExecutor._handle_cancellation for a between-turns cancel.
+
+        A cancellation that lands mid-node is already handled inside the
+        executor (the same :class:`CancelToken` is shared with it); this covers
+        the gap where the token fires while the supervisor is deciding or the
+        graph is being compiled, with no executor in flight to catch it.
+        """
+        state.transition_to(ExecutionStatus.CANCELLED, reason=exc.message)
+        await self._events.emit(
+            EventType.EXECUTION_CANCELLED, message=exc.message, reason=exc.message
+        )
+        await self._checkpoint(state, workflow, CheckpointReason.ON_CANCELLATION, None)
 
     async def _recover_from_round_drain(self, state: ExecutionState, workflow: Workflow) -> None:
         """Undo a terminal status the executor imposed on a round, not a run.

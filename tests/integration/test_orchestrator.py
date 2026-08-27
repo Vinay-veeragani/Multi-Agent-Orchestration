@@ -11,6 +11,7 @@ never concludes is bounded rather than looping forever.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,7 @@ from orchestration.routing.model_router import build_default_router
 from orchestration.runtime.orchestrator import ExecutionOrchestrator, seed_dynamic_workflow
 from orchestration.supervisor.supervisor import Supervisor
 from orchestration.tools.registry import build_default_registry
+from orchestration.workflow.executor import CancelToken
 
 pytestmark = pytest.mark.integration
 
@@ -62,7 +64,12 @@ class Engine:
         self.sandbox = sandbox
 
     def orchestrator(
-        self, state: ExecutionState, *, event_sequence: int = 0, max_turns: int = 40
+        self,
+        state: ExecutionState,
+        *,
+        event_sequence: int = 0,
+        max_turns: int = 40,
+        cancel_token: CancelToken | None = None,
     ) -> ExecutionOrchestrator:
         bus = EventBus([self.sink, PostgresEventSink(self.database)], start_sequence=event_sequence)
         approvals = ApprovalService(self.database, events=bus)
@@ -100,6 +107,7 @@ class Engine:
             meter=meter,
             events=ExecutionEventRecorder(bus=bus, execution_id=state.execution_id),
             checkpoint=self.manager.writer(),  # type: ignore[arg-type]
+            cancel_token=cancel_token,
             sandbox_root=self.sandbox,
             max_turns=max_turns,
         )
@@ -354,3 +362,70 @@ class TestHumanApproval:
         result = await second.orchestrator(context.state).run(context.state, context.workflow)
 
         assert result.status is ExecutionStatus.FAILED
+
+
+class TestCancellation:
+    async def test_a_cancelled_token_stops_the_run_between_turns(
+        self, database: Database, sandbox: Path
+    ) -> None:
+        """A cancellation with no node in flight must still be honoured."""
+        await _seed(database, "exec_dyn_cancel", "wkf_dyn_cancel")
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(routing_decision("delegate", agents=["research_agent"]),),
+                    priority=10,
+                ),
+                MockRule(name="agent", responses=(agent_output("work"),)),
+            ]
+        )
+        engine = Engine(database, provider, sandbox)
+        state = _state("exec_dyn_cancel", "wkf_dyn_cancel")
+        token = CancelToken()
+        token.cancel("operator requested cancellation")
+
+        result = await engine.orchestrator(state, cancel_token=token).run(state)
+
+        assert result.status is ExecutionStatus.CANCELLED
+        assert provider.call_count == 0, "no supervisor decision should follow a cancelled token"
+
+    async def test_a_genuine_terminal_status_is_not_mistaken_for_a_round_drain(
+        self, database: Database, sandbox: Path
+    ) -> None:
+        """CANCELLED must never be reverted by the round-drain recovery path."""
+        await _seed(database, "exec_dyn_cancel_mid", "wkf_dyn_cancel_mid")
+        token = CancelToken()
+
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(routing_decision("delegate", agents=["research_agent"]),),
+                    priority=10,
+                ),
+                # Cancel once the delegated agent itself is asked to run, so the
+                # cancellation fires *inside* the round the executor is running,
+                # not before it -- the case the round-drain guard must not
+                # mistake for an ordinary "nothing left ready this round".
+                MockRule(
+                    name="agent",
+                    responses=(agent_output("work"),),
+                    latency_seconds=0.05,
+                ),
+            ]
+        )
+        engine = Engine(database, provider, sandbox)
+        state = _state("exec_dyn_cancel_mid", "wkf_dyn_cancel_mid")
+
+        async def _cancel_soon() -> None:
+            await asyncio.sleep(0.01)
+            token.cancel("operator requested cancellation")
+
+        cancel_task = asyncio.create_task(_cancel_soon())
+        result = await engine.orchestrator(state, cancel_token=token).run(state)
+        await cancel_task
+
+        assert result.status is ExecutionStatus.CANCELLED
