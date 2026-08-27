@@ -239,6 +239,12 @@ class CheckpointReason(StrEnum):
     AFTER_REPLAN = "after_replan"
     ON_CANCELLATION = "on_cancellation"
     ON_BUDGET_EXCEEDED = "on_budget_exceeded"
+    #: A dynamic orchestration round drained (its delegated nodes all finished)
+    #: without the overall execution actually concluding. Written to correct a
+    #: checkpoint :class:`~orchestration.workflow.executor.WorkflowExecutor`
+    #: wrote when it mistook "nothing left ready in this round's subgraph" for
+    #: "the execution is over" -- true only for a static, fully-declared graph.
+    ROUND_COMPLETED = "round_completed"
 
 
 class EventType(StrEnum):
