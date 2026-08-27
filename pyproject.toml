@@ -82,6 +82,10 @@ orchestration = ["py.typed"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
+# Alembic autogenerates these from a live schema diff; hand-editing them to
+# satisfy a style checker adds risk (a typo in generated DDL) for no benefit.
+# migrations/env.py itself is hand-written and stays fully linted.
+extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = [
