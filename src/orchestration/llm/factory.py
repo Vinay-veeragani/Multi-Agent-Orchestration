@@ -92,8 +92,9 @@ def configured_providers(settings: Settings) -> tuple[str, ...]:
     """Providers this deployment can actually reach.
 
     Handed to the model router so it never selects a model whose credential is
-    absent. Mock is always available; Ollama is assumed reachable if configured,
-    since a local endpoint has no credential to check.
+    absent. Mock is always available; Ollama has no credential to check, so
+    ``ollama_enabled`` -- not the mere presence of ``ollama_base_url``, which
+    always has a default -- is what signals it was actually asked for.
     """
     available = ["mock"]
     if settings.openai_api_key:
@@ -102,7 +103,7 @@ def configured_providers(settings: Settings) -> tuple[str, ...]:
         available.append("anthropic")
     if settings.gemini_api_key:
         available.append("gemini")
-    if settings.ollama_base_url:
+    if settings.ollama_enabled:
         available.append("ollama")
     return tuple(available)
 

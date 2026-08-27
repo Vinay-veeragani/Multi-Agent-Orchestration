@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     gemini_api_key: SecretStr | None = None
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    #: Ollama needs no credential, so its mere presence can't signal intent the
+    #: way an API key does -- ``ollama_base_url`` always has a default value.
+    #: This flag is the actual opt-in :func:`~orchestration.llm.factory.
+    #: configured_providers` checks, so a deployment with no credentials at all
+    #: stays genuinely mock-only instead of silently trying to reach a local
+    #: Ollama server that was never actually asked for.
+    ollama_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     llm_timeout_seconds: float = Field(default=60.0, gt=0)
     llm_max_retries: int = Field(default=3, ge=0)

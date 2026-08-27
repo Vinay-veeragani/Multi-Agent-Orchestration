@@ -79,12 +79,20 @@ def seed_dynamic_workflow(name: str = "dynamic") -> Workflow:
     A single terminal node. Every delegation the supervisor requests is wired
     in *before* this node, so the graph is always exactly as valid as a
     hand-authored one -- there is no "not yet a real graph" state.
+
+    Each call is a private, execution-scoped graph, not a reusable named
+    workflow -- but ``WorkflowRow`` still enforces a ``(name, version)``
+    uniqueness constraint meant for the hand-authored case. ``version`` is
+    stamped from the generated id's own random suffix so two concurrent
+    dynamic executions (which otherwise share ``name="dynamic"`` and the
+    default ``version="1.0.0"``) never collide on it.
     """
-    return Workflow(
+    workflow = Workflow(
         name=name,
         nodes=(WorkflowNode(id=_ROOT_TERMINAL, kind=NodeKind.TERMINAL),),
         dynamic=True,
     )
+    return workflow.model_copy(update={"version": workflow.id.rsplit("_", 1)[-1]})
 
 
 @dataclass(slots=True)
