@@ -154,6 +154,22 @@ async def cancel_execution(
     )
 
 
+@router.post("/{execution_id}/resume", status_code=status.HTTP_202_ACCEPTED)
+async def resume_execution_route(
+    execution_id: str, app_state: AppState = Depends(get_app_state)
+) -> JsonDict:
+    """Resume an execution stranded by a crashed or restarted process.
+
+    A no-op, not an error, when the execution is already running in this
+    process -- an operator re-issuing the same resume request (or a resume
+    sweep racing a request that already succeeded) must not start a second
+    concurrent run over the same state.
+    """
+    if await app_state.runner.resume(execution_id):
+        return {"execution_id": execution_id, "resume": "started"}
+    return {"execution_id": execution_id, "resume": "already running in this process"}
+
+
 async def _resolve_pending_approval(
     execution_id: str, approval_id: str | None, service: ApprovalService
 ) -> ApprovalRequest:

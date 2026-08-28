@@ -347,6 +347,71 @@ class TestApprovalFlow:
         assert finished["status"] == ExecutionStatus.FAILED.value
 
 
+class TestResume:
+    async def test_resuming_a_stranded_execution_picks_up_a_decision_made_out_of_band(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        """A paused execution is no longer tracked as 'active' once it pauses --
+        the background task has already exited. Deciding the approval directly
+        against the database (not via the API's own /approve, which resumes
+        automatically) simulates an operator or a separate tool making the
+        decision, and /resume is what picks it back up.
+        """
+        from orchestration.policies.approvals import ApprovalService
+
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(
+                        routing_decision(
+                            "request_human_approval",
+                            approval_action="publish the report externally",
+                            approval_risk_reason="visible to customers",
+                        ),
+                        routing_decision("finalize", answer="published"),
+                    ),
+                    priority=10,
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post("/executions", json={"task": "publish a report"})
+            execution_id = created.json()["execution_id"]
+            paused = await _wait_for_terminal(client, execution_id)
+            assert paused["status"] == ExecutionStatus.WAITING_FOR_APPROVAL.value
+
+            approval_id = paused["pending_approval_id"]
+            assert approval_id is not None
+            await ApprovalService(database).approve(approval_id, by="ops@example.test")
+
+            # The background task that paused the run still has a brief window
+            # to pop itself out of the runner's active-set after its own
+            # status update; resume during that window correctly (if
+            # unhelpfully) reports "already running", so retry briefly rather
+            # than treating that as a failure.
+            for _ in range(20):
+                resumed = await client.post(f"/executions/{execution_id}/resume")
+                if resumed.json().get("resume") == "started":
+                    break
+                await asyncio.sleep(0.05)
+            assert resumed.status_code == 202
+            assert resumed.json()["resume"] == "started"
+
+            finished = await _wait_for_terminal(client, execution_id)
+
+        assert finished["status"] == ExecutionStatus.SUCCEEDED.value
+        assert finished["final_output"] == "published"
+
+    async def test_resuming_an_unknown_execution_is_404(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.post("/executions/exec_nonexistent/resume")
+        assert response.status_code == 404
+
+
 class TestStaticWorkflowExecution:
     async def test_running_a_registered_workflow_by_id(
         self, database: Database, redis_coordinator: RedisCoordinator
