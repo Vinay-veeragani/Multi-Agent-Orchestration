@@ -26,11 +26,14 @@ from orchestration.evaluation.report import run_benchmark
 from orchestration.evaluation.scenarios import ALL_SCENARIOS
 from orchestration.persistence.database import Database
 
-#: Repo-relative default output directory, so a run always leaves a trace
-#: even when no output path is given.
-DEFAULT_RESULTS_DIR = (
-    Path(__file__).resolve().parent.parent.parent.parent / "benchmarks" / "results"
-)
+#: Default output directory, so a run always leaves a trace even when no
+#: output path is given. Relative to the current working directory rather
+#: than this file's location: a non-editable install (a container image,
+#: notably) puts this module under site-packages, nowhere near a
+#: `benchmarks/` tree, whereas `orchestrator benchmark` is always invoked
+#: from somewhere that has (or can create) one -- the repo root in
+#: development, `/app` in the reference Docker image.
+DEFAULT_RESULTS_DIR = Path.cwd() / "benchmarks" / "results"
 
 
 def select_scenarios(

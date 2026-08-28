@@ -1,0 +1,39 @@
+# Keep the build context small and the layer cache stable -- only
+# pyproject.toml, src/, alembic.ini, migrations/, and benchmarks/ are ever
+# actually COPYed into an image (see Dockerfile).
+
+.git/
+.github/
+
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+.env
+.env.*
+!.env.example
+
+*.log
+.artifacts/
+artifacts/
+examples/**/workspace/
+benchmarks/results/
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+tests/
+docs/
