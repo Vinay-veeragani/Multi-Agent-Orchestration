@@ -177,3 +177,12 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedE
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "benchmarks"]
+# Each already reviewed and justified with a `# noqa` at its call site
+# (bandit doesn't read ruff's suppression comments, hence repeating the
+# reasoning here rather than duplicating markers):
+#   B101 assert_used        -- internal invariants; ruff's S101 accepts these too
+#   B311 blacklist (random) -- deterministic_backoff_for's seeded RNG is for
+#                              reproducible benchmark timing, not cryptography
+#   B404/B603 subprocess    -- report.py's best-effort `git rev-parse HEAD`:
+#                              fixed argv, resolved executable path, no shell
+skips = ["B101", "B311", "B404", "B603"]
