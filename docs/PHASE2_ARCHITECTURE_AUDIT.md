@@ -355,10 +355,25 @@ already narrates (see `dynamic-orchestration.md`). A graph visualization
 remains a possible, but explicitly deferred, purely-presentational addition
 on data the API already returns.
 
+Also built: a limited-scope workflow builder (`/workflows`,
+`/workflows/new`) -- a structured form (add nodes one at a time: id, kind
+[agent/join/terminal], agent picked from the live `GET /agents` registry;
+add edges by selecting existing node ids), not a drag-and-drop graph
+editor, consistent with the "log view is enough, no graph view" steer
+given earlier for the execution detail page. A live JSON preview shows
+exactly what will be submitted. Submits through the existing
+`POST /workflows` unchanged -- no new backend route, no relaxation of its
+existing graph/agent-registry validation. Deliberately out of scope: tool
+nodes (no `GET /tools` route exists yet to populate a picker), conditions,
+and approval nodes. Verified live: submitted the exact JSON shape the
+builder produces directly against the running API, got a 201 with the
+full validated `Workflow` back, and confirmed it appears on `/workflows`.
+
 Not yet built: React Flow workflow graph visualization (deferred, see
 above), execution replay scrubbing, tool inspection UI, the
-evaluation/ablation dashboard, and the workflow builder -- all still open
-per §14.
+evaluation/ablation dashboard -- all closed this session, see above.
+Genuinely still open: MCP client/adapter (§8) -- flagged separately as a
+much larger, protocol-level undertaking than anything else in this list.
 
 ## 13. Test suite baseline
 
@@ -377,17 +392,23 @@ that claims to verify integration.
 Concretely, mapped to what's above:
 
 - ~~No streaming transport~~ -- closed; see §3.
-- ~~No frontend at all~~ -- a foundation now exists; see §12. Still open:
-  workflow graph visualization, replay, tool inspection, HITL approval UI,
-  evaluation dashboard, workflow builder.
-- No MCP client (§8) -- full new adapter, genuinely new surface.
-- Ollama: likely already wired at the config/provider level (§8) but
-  unverified by an actual run -- verify before building anything new on top.
-- No workflow-builder persistence beyond the existing `workflows` /
-  `workflow_nodes` / `workflow_edges` tables (§4) -- a builder UI can target
-  the existing `POST /workflows` shape; whether that's sufficient for a
-  "limited-scope" builder needs to be decided against the existing
-  `Workflow`/`WorkflowNode` Pydantic models before designing new endpoints.
+- ~~No frontend at all~~ -- closed; see §12: dashboard, execution detail
+  (live view + replay), HITL approval, invocation inspection, evaluation
+  dashboard, and a limited-scope workflow builder are all built and
+  verified against the real running API. Deliberately not built: a
+  drag-and-drop workflow *graph* view (explicitly declined -- the
+  step-by-step log/replay is the higher-value thing for this project, per
+  the dynamic path having no fixed graph to show up front anyway).
+- ~~Ollama unverified~~ -- closed; see §8: a real httpx round trip against
+  a fake transport shaped like Ollama's documented endpoint confirms the
+  existing wiring works, with no new provider code needed.
+- **No MCP client (§8) -- still open, and the largest remaining item.**
+  A real MCP client is a protocol-level undertaking (JSON-RPC over
+  stdio/HTTP transports, tool discovery, wiring into `ToolRegistry` and
+  `PolicyEngine` so a remote tool goes through the same deny-by-default
+  authorisation a built-in tool does) genuinely larger in scope and risk
+  than every other item on this list combined -- needs its own explicit
+  scoping conversation before starting, not a quick slice.
 - No demo/zero-API-key mode beyond what `MockProvider` already gives the
   benchmark and example scripts -- extending that pattern to a
   browsable/demoable API mode is new wiring, not new provider logic.

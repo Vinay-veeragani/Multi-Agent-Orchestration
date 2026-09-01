@@ -33,6 +33,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/benchmarks" className="text-sm text-neutral-500 hover:underline">
               Benchmarks
             </Link>
+            <Link href="/workflows" className="text-sm text-neutral-500 hover:underline">
+              Workflows
+            </Link>
           </div>
         </header>
         <main className="flex-1">{children}</main>

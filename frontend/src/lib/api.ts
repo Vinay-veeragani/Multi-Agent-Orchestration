@@ -115,7 +115,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new ApiError(response.status, body || response.statusText);
+    // The engine's error handler always shapes a body as
+    // {"error": {"code", "message", ...}} (see docs/interfaces.md) -- surface
+    // the human-readable message when present, fall back to the raw body.
+    let message = body || response.statusText;
+    try {
+      const parsed = JSON.parse(body) as { error?: { message?: string } };
+      if (parsed.error?.message) message = parsed.error.message;
+    } catch {
+      // Not JSON (a proxy error page, a 5xx from something else in front of
+      // the API) -- the raw text is the best available message.
+    }
+    throw new ApiError(response.status, message);
   }
   return (await response.json()) as T;
 }
@@ -126,6 +137,35 @@ export function listAgents(): Promise<AgentSummary[]> {
 
 export function listWorkflows(): Promise<WorkflowSummary[]> {
   return request<WorkflowSummary[]>("/workflows");
+}
+
+// Limited-scope on purpose: agent, join, and terminal nodes only (no tool
+// nodes, conditions, or approval nodes) -- covers the fan-out/join shape
+// every demo and test in this repo already uses, without a graph editor.
+export interface WorkflowNodeInput {
+  id: string;
+  kind: "agent" | "join" | "terminal";
+  agent_id?: string;
+  join_policy?: "all" | "any" | "quorum";
+}
+
+export interface WorkflowEdgeInput {
+  source: string;
+  target: string;
+}
+
+export interface CreateWorkflowInput {
+  name: string;
+  description?: string;
+  nodes: WorkflowNodeInput[];
+  edges: WorkflowEdgeInput[];
+}
+
+export function createWorkflow(input: CreateWorkflowInput): Promise<WorkflowSummary> {
+  return request<WorkflowSummary>("/workflows", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function listExecutions(params?: {
