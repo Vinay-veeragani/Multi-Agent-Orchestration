@@ -198,6 +198,7 @@ retry-enabled arms is exactly the 6 retry-recovery scenarios, which are
 | [`docs/budget-and-policies.md`](docs/budget-and-policies.md) | Budget enforcement and deny-by-default tool permissions |
 | [`docs/observability.md`](docs/observability.md) | Logging, tracing, and metrics |
 | [`docs/interfaces.md`](docs/interfaces.md) | The HTTP API and the `orchestrator` CLI |
+| [`docs/mcp-tools.md`](docs/mcp-tools.md) | Connecting an MCP server: discovery, the two gates that keep it deny-by-default, what's out of scope |
 | [`docs/evaluation-benchmark.md`](docs/evaluation-benchmark.md) | Benchmark methodology, scenarios, and how to reproduce the numbers above |
 | [`docs/deployment.md`](docs/deployment.md) | Docker/compose and production configuration notes |
 | [`frontend/README.md`](frontend/README.md) | The web UI: pages, how it talks to the API, running it |

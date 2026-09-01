@@ -76,6 +76,7 @@ all of them with defaults; the ones you're most likely to touch first:
 | `ORCH_OLLAMA_ENABLED` | Ollama needs no credential, so this explicit flag (not just the base URL) is what opts it in |
 | `ORCH_ENABLE_SHELL_TOOL` | Leave `false` -- see `docs/budget-and-policies.md` |
 | `ORCH_FILE_SANDBOX_ROOT` | Where file tools are confined to |
+| `ORCH_MCP_ENABLED`, `ORCH_MCP_SERVER_COMMAND` | Connect an MCP tool server -- see `docs/mcp-tools.md` |
 
 Running the evaluation benchmark or the integration test suite against a
 *second*, disposable database is standard: `ORCH_PG_TEST_DSN` /

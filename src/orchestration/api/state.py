@@ -22,6 +22,7 @@ from orchestration.persistence.database import Database
 from orchestration.persistence.repositories import AgentRepository, ToolRepository
 from orchestration.policies.engine import PolicyEngine, build_default_policy_engine
 from orchestration.routing.model_router import ModelRouter, build_default_router
+from orchestration.tools.mcp import MCPClient, discover_mcp_tools
 from orchestration.tools.registry import ToolRegistry, build_default_registry
 
 
@@ -40,6 +41,9 @@ class AppState:
     router: ModelRouter
     checkpoint_manager: CheckpointManager
     sandbox_root: Path
+    #: Open MCP connections, closed alongside everything else in
+    #: close_app_state. Empty unless settings.mcp_enabled.
+    mcp_clients: list[MCPClient] = field(default_factory=list)
     runner: ExecutionRunner = field(init=False)
 
     def __post_init__(self) -> None:
@@ -77,6 +81,20 @@ async def build_app_state(
 
     agents = build_default_agent_registry()
     tools = build_default_registry()
+
+    mcp_clients: list[MCPClient] = []
+    if resolved.mcp_enabled and resolved.mcp_server_command:
+        # Deliberately not swallowed: an operator who turned this on should
+        # learn immediately that the configured server is unreachable, not
+        # silently run with fewer tools than they think they have.
+        client = MCPClient(
+            resolved.mcp_server_command, timeout_seconds=resolved.mcp_timeout_seconds
+        )
+        await client.start()
+        mcp_clients.append(client)
+        for tool in await discover_mcp_tools(client, server_name=resolved.mcp_server_name):
+            tools.register(tool)
+
     policy = build_default_policy_engine(agents=agents, tools=tools)
 
     available = configured_providers(resolved)
@@ -104,10 +122,13 @@ async def build_app_state(
         router=router,
         checkpoint_manager=CheckpointManager(database),
         sandbox_root=resolved.file_sandbox_root,
+        mcp_clients=mcp_clients,
     )
 
 
 async def close_app_state(state: AppState) -> None:
     await state.runner.shutdown()
+    for client in state.mcp_clients:
+        await client.aclose()
     await state.database.aclose()
     await state.redis.aclose()

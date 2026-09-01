@@ -47,9 +47,16 @@ async def _client(
     *,
     require_auth: bool = False,
     api_keys: str = "test-key",
+    mcp_enabled: bool = False,
+    mcp_server_command: str = "",
 ) -> AsyncIterator[httpx.AsyncClient]:
     """A live app, over an in-process ASGI transport, torn down on exit."""
-    settings = Settings(api_require_auth=require_auth, api_keys=api_keys)
+    settings = Settings(
+        api_require_auth=require_auth,
+        api_keys=api_keys,
+        mcp_enabled=mcp_enabled,
+        mcp_server_command=mcp_server_command,
+    )
     app: FastAPI = create_app(
         settings,
         llm=LLMClient.mock(provider, sleep=_no_sleep),
@@ -792,3 +799,36 @@ class TestBenchmarks:
         async with _client(database, redis_coordinator, MockProvider()) as client:
             response = await client.get("/benchmarks/eval_nonexistent")
         assert response.status_code == 404
+
+
+class TestMCPWiring:
+    """Real MCP discovery through the actual app startup path
+    (`build_app_state`), not just the standalone client -- see
+    tests/integration/test_mcp.py for the client/adapter/policy tests
+    themselves. Skipped, not failed, without npx.
+    """
+
+    async def test_mcp_tools_are_discovered_and_registered_at_app_startup(
+        self, database: Database, redis_coordinator: RedisCoordinator, tmp_path: Any
+    ) -> None:
+        import shutil
+
+        if shutil.which("npx") is None:
+            pytest.skip("npx is not available")
+
+        (tmp_path / "greeting.txt").write_text("hello mcp\n", encoding="utf-8")
+        settings = Settings(
+            mcp_enabled=True,
+            mcp_server_command=f"npx -y @modelcontextprotocol/server-filesystem {tmp_path}",
+        )
+        app = create_app(
+            settings,
+            llm=LLMClient.mock(MockProvider(), sleep=_no_sleep),
+            database=database,
+            redis=redis_coordinator,
+        )
+        async with app.router.lifespan_context(app):
+            app_state = app.state.app_state
+            assert app_state.tools.has("mcp_default_read_text_file")
+            assert app_state.tools.is_enabled("mcp_default_read_text_file")
+            assert len(app_state.mcp_clients) == 1

@@ -120,6 +120,20 @@ class Settings(BaseSettings):
     approval_timeout_seconds: float = Field(default=3600.0, gt=0)
     file_sandbox_root: Path = Path("./.artifacts")
 
+    # --- MCP (Model Context Protocol) ---
+    #: Off by default: connecting to an external tool server is a new trust
+    #: boundary, not something a deployment should acquire silently just by
+    #: a command string being present in the environment.
+    mcp_enabled: bool = False
+    #: Shell-split into argv for a stdio-transport MCP server, e.g.
+    #: "npx -y @modelcontextprotocol/server-filesystem /path/to/allowed/dir".
+    #: Empty means "no server configured" even if mcp_enabled is true.
+    mcp_server_command: str = ""
+    #: Used as the tool-name prefix (mcp_{name}_{tool}) and in logs; has no
+    #: effect on which server is actually contacted.
+    mcp_server_name: str = "default"
+    mcp_timeout_seconds: float = Field(default=30.0, gt=0)
+
     @field_validator("pg_dsn", "pg_test_dsn")
     @classmethod
     def _require_async_driver(cls, v: str) -> str:

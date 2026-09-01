@@ -218,11 +218,14 @@ all exercised for real; only the transport is swapped
 (`tests/unit/test_llm.py::test_ollama_round_trip_against_a_real_openai_compatible_endpoint`).
 Confirms the original inference: no new provider code was needed.
 
-No MCP (Model Context Protocol) client or adapter exists anywhere in this
-codebase. `tools/registry.py` is a plain in-process registry of
-`ToolDefinition`s with handlers; there is no concept of a remote tool server
-today. MCP support is genuinely new work, not an extension of an existing
-partial implementation.
+**Update**: an MCP client now exists (`tools/mcp.py`) -- see §14 for the
+full account, including the real reference-server verification and the
+Windows subprocess-launch gotcha it surfaced. `tools/registry.py` itself
+was not changed; a discovered MCP tool registers into it as an ordinary
+`Tool` (a `FunctionTool`), which is what makes it subject to
+`PolicyEngine` the same way any other registered tool is -- no new "remote
+tool" concept was added to the registry itself, only a new way to produce
+`Tool` instances to feed it.
 
 ## 9. Current tool abstraction
 
@@ -369,11 +372,11 @@ and approval nodes. Verified live: submitted the exact JSON shape the
 builder produces directly against the running API, got a 201 with the
 full validated `Workflow` back, and confirmed it appears on `/workflows`.
 
-Not yet built: React Flow workflow graph visualization (deferred, see
-above), execution replay scrubbing, tool inspection UI, the
-evaluation/ablation dashboard -- all closed this session, see above.
-Genuinely still open: MCP client/adapter (§8) -- flagged separately as a
-much larger, protocol-level undertaking than anything else in this list.
+Not yet built: React Flow workflow graph visualization -- deliberately
+deferred, see above. Everything else originally listed here (streaming,
+frontend, invocation inspection, evaluation dashboard, workflow builder,
+Ollama verification, MCP) is closed this session; see the update notes
+above and in §8.
 
 ## 13. Test suite baseline
 
@@ -402,13 +405,38 @@ Concretely, mapped to what's above:
 - ~~Ollama unverified~~ -- closed; see §8: a real httpx round trip against
   a fake transport shaped like Ollama's documented endpoint confirms the
   existing wiring works, with no new provider code needed.
-- **No MCP client (§8) -- still open, and the largest remaining item.**
-  A real MCP client is a protocol-level undertaking (JSON-RPC over
-  stdio/HTTP transports, tool discovery, wiring into `ToolRegistry` and
-  `PolicyEngine` so a remote tool goes through the same deny-by-default
-  authorisation a built-in tool does) genuinely larger in scope and risk
-  than every other item on this list combined -- needs its own explicit
-  scoping conversation before starting, not a quick slice.
+- ~~No MCP client~~ -- closed. `src/orchestration/tools/mcp.py`: a real
+  stdio-transport JSON-RPC client (`MCPClient`), tool discovery
+  (`discover_mcp_tools`), and translation into a `FunctionTool` so a
+  discovered tool is registered and authorised exactly like a built-in
+  one. Config: `ORCH_MCP_ENABLED` / `_SERVER_COMMAND` / `_SERVER_NAME`
+  (off by default), wired into `build_app_state` -- a configured-but-
+  unreachable server fails app startup loudly rather than silently
+  running with fewer tools. See [`mcp-tools.md`](mcp-tools.md).
+
+  Verified against a **real** server, not a fabricated one: the official
+  `@modelcontextprotocol/server-filesystem` reference implementation, run
+  via `npx` (7 tests in `tests/integration/test_mcp.py`, skipped rather
+  than failed when `npx` is unavailable) -- real handshake, real
+  `tools/list`, a real file actually read through the full engine `Tool.
+  invoke()` path (argument validation included), a real MCP-level error
+  turned into a real `InputValidationError`, and confirmation that
+  `PolicyEngine` gates a discovered tool exactly like a built-in one: DENY
+  with no permission granted, and -- a genuine finding while writing that
+  test, not something assumed -- REQUIRE_APPROVAL rather than a bare ALLOW
+  even once granted, because every MCP tool registers at `RiskLevel.HIGH`
+  and the engine's own default rules require approval for any HIGH-risk
+  call. A separate test proves the same discovery path fires for real
+  during actual `build_app_state` startup, not just via the standalone
+  client.
+
+  A real, hands-on Windows-vs-Linux gotcha surfaced building this:
+  `asyncio.create_subprocess_exec("npx", ...)` fails on Windows with
+  `FileNotFoundError` (confirmed by direct reproduction) because `npx` is
+  a `.cmd` shim `CreateProcess` cannot resolve without a shell. Fixed by
+  launching via `create_subprocess_shell` instead of a hand-split argv --
+  documented in `mcp.py` as a deliberate trust decision (the command is
+  operator-configured deployment settings, not attacker-controlled input).
 - No demo/zero-API-key mode beyond what `MockProvider` already gives the
   benchmark and example scripts -- extending that pattern to a
   browsable/demoable API mode is new wiring, not new provider logic.
