@@ -1,9 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApiError, getBenchmarkRun } from "@/lib/api";
 
 function pct(n: number | null): string {
   return n == null ? "—" : `${(n * 100).toFixed(1)}%`;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  return { title: id };
 }
 
 export default async function BenchmarkDetailPage({

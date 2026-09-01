@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+import { NavLinks } from "./nav-links";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,7 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Orchestration Engine",
+  title: {
+    default: "Agent Orchestration Engine",
+    template: "%s · Agent Orchestration Engine",
+  },
   description: "Live view of agent executions, workflows, and agents.",
 };
 
@@ -30,12 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="font-medium">
               Agent Orchestration Engine
             </Link>
-            <Link href="/benchmarks" className="text-sm text-neutral-500 hover:underline">
-              Benchmarks
-            </Link>
-            <Link href="/workflows" className="text-sm text-neutral-500 hover:underline">
-              Workflows
-            </Link>
+            <NavLinks />
           </div>
         </header>
         <main className="flex-1">{children}</main>

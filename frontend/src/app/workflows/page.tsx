@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { listWorkflows } from "@/lib/api";
+
+export const metadata: Metadata = { title: "Workflows" };
 
 export default async function WorkflowsPage() {
   const workflows = await listWorkflows();

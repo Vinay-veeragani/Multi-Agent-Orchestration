@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { listWorkflows } from "@/lib/api";
 import { NewExecutionForm } from "./form";
+
+export const metadata: Metadata = { title: "New Execution" };
 
 export default async function NewExecutionPage() {
   const workflows = await listWorkflows();

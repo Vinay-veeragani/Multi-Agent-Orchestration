@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -21,6 +22,15 @@ const STATUS_BADGE: Record<string, string> = {
   pending: "bg-neutral-200 text-neutral-700 dark:bg-neutral-500/20 dark:text-neutral-300",
   waiting_for_approval: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400",
 };
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  return { title: id };
+}
 
 export default async function ExecutionDetailPage({
   params,

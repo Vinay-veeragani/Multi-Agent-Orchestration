@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { listAgents, listExecutions, listWorkflows } from "@/lib/api";
+
+export const metadata: Metadata = { title: "Executions" };
 
 const STATUS_BADGE: Record<string, string> = {
   succeeded: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400",

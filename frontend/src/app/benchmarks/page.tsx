@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { listBenchmarkRuns } from "@/lib/api";
+
+export const metadata: Metadata = { title: "Benchmarks" };
 
 export default async function BenchmarksPage() {
   const runs = await listBenchmarkRuns(50);

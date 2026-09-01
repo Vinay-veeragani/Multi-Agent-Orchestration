@@ -297,6 +297,26 @@ stores results unredacted elsewhere in this system, and not returned by
 either route (`GET /tool-invocations` deliberately omits `result`), so it
 does not change the API's actual exposure surface.
 
+Also built: a frontend polish pass -- per-page `<title>`, active-route nav
+highlighting, a custom `not-found.tsx`, a custom `error.tsx`, and
+`loading.tsx` skeletons on the list/detail routes. Surfaced a real,
+inherent Next.js 16 behavior while verifying `notFound()` still worked:
+a route that calls it returns HTTP `200` (custom content + `noindex` meta)
+rather than a real `404` -- confirmed via curl, then confirmed this is a
+framework-level streaming trade-off, not something the new `loading.tsx`
+files caused, by removing them and observing the same `200` persisted.
+Documented rather than chased further (a real fix needs checking existence
+before the response starts streaming, a bigger change not worth it for an
+internal dashboard with no search-indexing concern). Separately confirmed
+`error.tsx`'s limit as a verification method: it's a client-side React
+error boundary, so its actual rendering happens during browser hydration
+of the streamed RSC payload -- confirmed the server-side error is real
+(stopped the API, saw the logged fetch failure), but observing the
+boundary's own rendered output needs a real browser, which curl cannot
+provide; this is the same honest limit already applied to every other
+client-interactive piece built this session (buttons, forms), not a new
+gap introduced by this polish pass.
+
 Also built: closed a real gap in the frontend's own client -- `createExecution`
 and `cancelExecution` existed in `src/lib/api.ts` but had zero callers
 anywhere in the UI. Added `/executions/new` (a form: task, optional

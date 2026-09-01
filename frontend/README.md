@@ -10,9 +10,12 @@ goes through the same API the CLI uses (see [`../docs/interfaces.md`](../docs/in
 | Route | Shows |
 |---|---|
 | `/` | Recent executions -- status, cost, created time |
-| `/executions/[id]` | Nodes, budget usage, agent/tool invocations, and either a live SSE event stream (in-flight) or a play/step/scrub replay (finished) |
+| `/executions/new` | Start an execution (task, optional success criteria, optional workflow) |
+| `/executions/[id]` | Nodes, budget usage, agent/tool invocations, a Cancel button while in flight, and either a live SSE event stream (in-flight) or a play/step/scrub replay (finished) |
 | `/benchmarks` | Recent `orchestrator benchmark` reports |
 | `/benchmarks/[id]` | One report's ablation comparison and per-scenario pass/fail grid |
+| `/workflows` | Registered (hand-authored) workflows |
+| `/workflows/new` | A limited-scope builder: agent/join/terminal nodes and edges, not a graph editor |
 
 ## Running it
 
@@ -41,6 +44,24 @@ which hold the key server-side:
 - **`src/app/executions/[id]/approval-actions.ts`** is a Next.js Server
   Action -- the approve/reject mutation runs server-side and calls the
   existing `/approve`/`/reject` routes; the browser never holds the key.
+
+## UI details
+
+- Per-page `<title>` (via `export const metadata` / `generateMetadata`),
+  active-route highlighting in the header nav (`nav-links.tsx`), a custom
+  `not-found.tsx`, a custom `error.tsx` (a client-side error boundary --
+  its actual rendering only happens during browser hydration, which is
+  the one thing about this app that genuinely can't be checked with
+  `curl`), and `loading.tsx` skeletons on the list/detail routes.
+- A route that calls `notFound()` returns HTTP `200` with the custom
+  not-found content and a `<meta name="robots" content="noindex">` tag,
+  not a real `404` status -- confirmed as an inherent trade-off of this
+  Next.js version's streaming model (present with or without a
+  `loading.tsx` on that route), not something introduced here. Harmless
+  for an internal dashboard with no public search-indexing concern; see
+  Next's own `notFound()` docs ("Status codes") if this ever needs a real
+  404 status, which requires checking existence before the response
+  starts streaming.
 
 ## Development
 
