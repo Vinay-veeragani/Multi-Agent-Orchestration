@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# agent-orchestration-engine -- web UI
 
-## Getting Started
+Next.js 16 (App Router) + TypeScript + Tailwind v4. A read-mostly view over
+the orchestrator's HTTP API, plus a human-in-the-loop approve/reject panel.
+There is no separate write path or database of its own -- every mutation
+goes through the same API the CLI uses (see [`../docs/interfaces.md`](../docs/interfaces.md)).
 
-First, run the development server:
+## Pages
+
+| Route | Shows |
+|---|---|
+| `/` | Recent executions -- status, cost, created time |
+| `/executions/[id]` | Nodes, budget usage, agent/tool invocations, and either a live SSE event stream (in-flight) or a play/step/scrub replay (finished) |
+| `/benchmarks` | Recent `orchestrator benchmark` reports |
+| `/benchmarks/[id]` | One report's ablation comparison and per-scenario pass/fail grid |
+
+## Running it
+
+Requires the orchestrator API already running (see the root
+[`README.md`](../README.md#quickstart)).
 
 ```bash
+cp .env.local.example .env.local   # set ORCHESTRATOR_API_URL / _API_KEY
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How it talks to the API
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`src/lib/api.ts` is a **server-only** client -- imported only from Server
+Components and Route Handlers, never from a `"use client"` file. That is
+what keeps `ORCHESTRATOR_API_KEY` out of the browser bundle: every request
+the browser itself makes goes to one of this app's own same-origin routes,
+which hold the key server-side:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **`src/app/api/stream/[id]/route.ts`** proxies `GET /executions/{id}/stream`
+  (Server-Sent Events) byte-for-byte, attaching the key server-side -- a
+  plain browser `EventSource` cannot set custom headers, so this is what
+  lets the live-events view (`executions/[id]/live-events.tsx`) use one
+  directly.
+- **`src/app/executions/[id]/approval-actions.ts`** is a Next.js Server
+  Action -- the approve/reject mutation runs server-side and calls the
+  existing `/approve`/`/reject` routes; the browser never holds the key.
 
-## Learn More
+## Development
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint     # eslint
+npm run build    # next build, includes a full TypeScript check
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+No test suite of its own yet -- correctness of the data it displays is
+covered by the backend's integration tests
+(`tests/integration/test_api.py`), which exercise the same routes against
+real PostgreSQL and Redis.

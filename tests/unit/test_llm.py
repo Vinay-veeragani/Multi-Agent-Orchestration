@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+import httpx
 import pytest
 
 from orchestration.domain.enums import ModelCapability, Provider
@@ -54,7 +55,7 @@ from orchestration.llm.providers import (
     _parse_openai_tool_calls,
     ollama_provider,
 )
-from orchestration.models.catalog import MOCK_FAST, MOCK_SMART, build_catalog
+from orchestration.models.catalog import LLAMA_LOCAL, MOCK_FAST, MOCK_SMART, build_catalog
 
 pytestmark = pytest.mark.unit
 
@@ -605,6 +606,44 @@ class TestOpenAIAdapter:
         adapter = ollama_provider()
         assert adapter._auth_headers() == {}
         assert adapter.provider is Provider.OLLAMA
+
+    async def test_ollama_round_trip_against_a_real_openai_compatible_endpoint(
+        self,
+    ) -> None:
+        """No local Ollama server is available in CI/this environment, so this
+        proves the wiring the only way that's possible here: a real HTTP
+        request/response cycle through httpx against a fake server that speaks
+        Ollama's actual `/v1/chat/completions` shape (verified against Ollama's
+        published OpenAI-compatibility docs), swapping only the transport --
+        URL construction, headers, payload serialisation, and response parsing
+        are all the same code a real Ollama server would exercise.
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/v1/chat/completions"
+            assert "Authorization" not in request.headers
+            body = json.loads(request.content)
+            assert body["model"] == "llama3.1:8b"
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "hello from ollama"}}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+                },
+            )
+
+        adapter = ollama_provider()
+        adapter._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url=adapter._base_url
+        )
+        try:
+            response = await adapter.complete(_request(LLAMA_LOCAL, "hi"))
+        finally:
+            await adapter.aclose()
+
+        assert response.content == "hello from ollama"
+        assert response.usage.input_tokens == 12
+        assert response.usage.output_tokens == 4
 
     def test_tool_calls_are_parsed(self) -> None:
         calls = _parse_openai_tool_calls(

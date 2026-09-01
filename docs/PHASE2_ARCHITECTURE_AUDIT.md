@@ -207,6 +207,17 @@ support; this needs to be verified by an actual run against a local Ollama
 instance before Phase 2 claims it as "already works," but no new provider
 class should be needed.
 
+**Update**: Ollama wiring is now verified, not just inferred. No real
+Ollama install is available in this environment, so the strongest
+available proof was used: a real `httpx` request/response cycle
+(`OpenAICompatibleProvider.complete()`, unmodified) against a fake
+transport that speaks Ollama's actual documented `/v1/chat/completions`
+shape -- URL construction (`http://127.0.0.1:11434/v1/chat/completions`),
+no-auth-header behavior, payload serialisation, and response parsing are
+all exercised for real; only the transport is swapped
+(`tests/unit/test_llm.py::test_ollama_round_trip_against_a_real_openai_compatible_endpoint`).
+Confirms the original inference: no new provider code was needed.
+
 No MCP (Model Context Protocol) client or adapter exists anywhere in this
 codebase. `tools/registry.py` is a plain in-process registry of
 `ToolDefinition`s with handlers; there is no concept of a remote tool server

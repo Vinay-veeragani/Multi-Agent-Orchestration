@@ -15,6 +15,7 @@ scenario in this repository.
 ## Contents
 
 - [Quickstart](#quickstart)
+- [Web UI](#web-ui)
 - [What this is](#what-this-is)
 - [Why this architecture](#why-this-architecture)
 - [What this project is NOT](#what-this-project-is-not)
@@ -59,6 +60,27 @@ competitive intelligence (parallel research fan-out), data analysis (a real
 tool call mid-run), and human approval (a durable pause across a simulated
 process restart).
 
+## Web UI
+
+A Next.js app under [`frontend/`](frontend/) -- a dashboard of recent
+executions, an execution detail page (nodes, budget usage, live SSE event
+stream while running, a play/step/scrub replay once it's finished, and the
+recorded agent/tool invocations), a human-in-the-loop approve/reject panel,
+and an evaluation/ablation dashboard. It talks to the same API above; the
+orchestrator API key stays server-side (Server Components and a same-origin
+SSE proxy) and never reaches the browser bundle.
+
+```bash
+cd frontend
+cp .env.local.example .env.local   # point at the API above; set the same key
+npm install
+npm run dev
+```
+
+Requires the API from the Quickstart above to already be running. See
+[`frontend/`](frontend/) for details; there is no separate write path here --
+every mutation goes through the same HTTP API the CLI uses.
+
 ## What this is
 
 - **A supervisor** that decides, per turn, whether to delegate to one agent,
@@ -80,8 +102,8 @@ process restart).
   tokens, duration, agent steps, tool calls, and retries, and full
   observability (structured logs with secret redaction, OpenTelemetry traces,
   Prometheus metrics).
-- **An HTTP API, a CLI, and a benchmark** over all of the above -- see
-  [Documentation](#documentation).
+- **An HTTP API, a CLI, a benchmark, and a web UI** over all of the above --
+  see [Documentation](#documentation) and [Web UI](#web-ui).
 
 ## Why this architecture
 
@@ -131,8 +153,10 @@ of exactly those were found and fixed this way.
   running on another) is a documented known limitation, not a silent gap.
 - **Not a finished product.** It is a reference implementation of the
   architecture: production-shaped, but without the operational surface
-  (multi-region failover, cost dashboards, a UI) a commercial product would
-  need on top.
+  (multi-region failover, a workflow builder, tool-call arguments/results
+  exposed for inspection) a commercial product would need on top. The web
+  UI is a real, working dashboard/replay/evaluation view -- not a mockup --
+  but it is deliberately read-mostly (see [Web UI](#web-ui)).
 
 ## Evaluation results
 
@@ -176,6 +200,7 @@ retry-enabled arms is exactly the 6 retry-recovery scenarios, which are
 | [`docs/interfaces.md`](docs/interfaces.md) | The HTTP API and the `orchestrator` CLI |
 | [`docs/evaluation-benchmark.md`](docs/evaluation-benchmark.md) | Benchmark methodology, scenarios, and how to reproduce the numbers above |
 | [`docs/deployment.md`](docs/deployment.md) | Docker/compose and production configuration notes |
+| [`frontend/README.md`](frontend/README.md) | The web UI: pages, how it talks to the API, running it |
 
 ## Project layout
 
@@ -203,4 +228,5 @@ examples/        Runnable, narrated demos
 benchmarks/      Standalone benchmark entry point and results
 migrations/      Alembic migrations
 docs/            This documentation
+frontend/        Next.js web UI -- dashboard, execution detail, replay, benchmarks
 ```
