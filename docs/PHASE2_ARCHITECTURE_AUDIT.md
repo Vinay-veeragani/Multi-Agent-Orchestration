@@ -297,6 +297,24 @@ stores results unredacted elsewhere in this system, and not returned by
 either route (`GET /tool-invocations` deliberately omits `result`), so it
 does not change the API's actual exposure surface.
 
+Also built: closed a real gap in the frontend's own client -- `createExecution`
+and `cancelExecution` existed in `src/lib/api.ts` but had zero callers
+anywhere in the UI. Added `/executions/new` (a form: task, optional
+success criteria, optional workflow selection for a static run instead of
+a dynamic one) and a `Cancel` button on the detail page for any
+non-terminal execution, both as Server Actions. Fixed a real bug found
+while wiring this up: `CreateExecutionInput.successCriteria` was typed as
+a single `string`, but the API's `success_criteria` is `tuple[str, ...]`
+-- would have sent the wrong shape the first time anything actually called
+it. Verified against the real running API: posted the exact body the form
+produces, got a 202 back; called the real `/cancel` endpoint on an
+already-finished execution and got the real `not_found` error the route
+actually returns for that case (confirming the error surfaces through the
+UI's `ApiError` message-parsing rather than raw JSON) -- MockProvider's
+runs finish sub-second, so genuinely cancelling one *mid-flight* isn't
+demonstrable without a real, slower LLM behind it; that limit is stated
+here rather than papered over.
+
 Also built: execution replay on the detail page (`replay.tsx`) -- a
 play/pause/step/scrub control over a terminal execution's already-fetched
 event list. Needed no new backend data: node status at any point in the

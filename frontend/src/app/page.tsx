@@ -19,7 +19,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-xl font-medium">Executions</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-medium">Executions</h1>
+        <Link
+          href="/executions/new"
+          className="rounded bg-black/5 px-3 py-1.5 text-sm font-medium hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/15"
+        >
+          New execution
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         {agents.length} agents registered &middot; {workflows.length} workflows registered
       </p>

@@ -9,6 +9,7 @@ import {
   listToolInvocations,
 } from "@/lib/api";
 import { ApprovalPanel } from "./approval-panel";
+import { CancelButton } from "./cancel-button";
 import { LiveEvents } from "./live-events";
 import { Replay } from "./replay";
 
@@ -61,6 +62,7 @@ export default async function ExecutionDetailPage({
         >
           {state.status}
         </span>
+        {!isTerminal && <CancelButton executionId={state.execution_id} />}
       </div>
       <p className="mt-1 text-neutral-600 dark:text-neutral-400">{state.task.description}</p>
       {state.final_output && (

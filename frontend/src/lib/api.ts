@@ -189,7 +189,9 @@ export function getExecutionEvents(executionId: string): Promise<ExecutionEvent[
 
 export interface CreateExecutionInput {
   task: string;
-  successCriteria?: string;
+  // The API's success_criteria is a tuple[str, ...] -- an array, not a
+  // single string.
+  successCriteria?: string[];
   workflowId?: string;
 }
 
@@ -200,8 +202,8 @@ export function createExecution(
     method: "POST",
     body: JSON.stringify({
       task: input.task,
-      success_criteria: input.successCriteria,
-      workflow_id: input.workflowId,
+      success_criteria: input.successCriteria ?? [],
+      workflow_id: input.workflowId || undefined,
     }),
   });
 }
