@@ -31,6 +31,7 @@ from orchestration.domain.workflow import Workflow
 from orchestration.events.bus import EventBus, ExecutionEventRecorder, InMemoryEventSink
 from orchestration.events.sinks import PostgresEventSink
 from orchestration.observability.logging import get_logger
+from orchestration.persistence.invocation_recorder import InvocationRecorder
 from orchestration.policies.approvals import ApprovalService
 from orchestration.runtime.orchestrator import MAX_SUPERVISOR_TURNS, ExecutionOrchestrator
 from orchestration.supervisor.supervisor import Supervisor
@@ -201,6 +202,7 @@ class ExecutionRunner:
         meter = BudgetMeter(
             state.budget, state.budget_usage, elapsed=lambda: state.elapsed_seconds
         )
+        invocations = InvocationRecorder(self._app.database)
 
         async def base_authorise(
             agent_id: str, tool: str, arguments: JsonDict
@@ -218,6 +220,7 @@ class ExecutionRunner:
                 base_authorise, execution_id=execution_id
             ),
             budget_check=BudgetGuard(meter),
+            tool_observer=invocations.record_tool,
         )
 
         if workflow.dynamic:
@@ -236,6 +239,7 @@ class ExecutionRunner:
                 meter=meter,
                 events=events,
                 checkpoint=self._app.checkpoint_manager.writer(),  # type: ignore[arg-type]
+                invocation_recorder=invocations.record_agent,
                 cancel_token=cancel,
                 sandbox_root=self._app.sandbox_root,
                 max_turns=max_turns or MAX_SUPERVISOR_TURNS,
@@ -251,6 +255,7 @@ class ExecutionRunner:
             events=events,
             meter=meter,
             checkpoint=self._app.checkpoint_manager.writer(),  # type: ignore[arg-type]
+            invocation_recorder=invocations.record_agent,
             approval_gate=approvals.gate(),  # type: ignore[arg-type]
             cancel_token=cancel,
             sandbox_root=self._app.sandbox_root,

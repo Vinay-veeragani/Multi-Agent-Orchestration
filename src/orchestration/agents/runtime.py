@@ -78,8 +78,10 @@ ToolAuthoriser = Callable[[str, str, JsonDict], Awaitable[ToolDecision]]
 #: Consulted before each model and tool call. Raises to stop the agent.
 BudgetCheck = Callable[[str], Awaitable[None]]
 
-#: Notified of each completed tool invocation, for events and usage accounting.
-ToolObserver = Callable[[str, ToolResult], Awaitable[None]]
+#: Notified of each completed tool invocation, for events, usage accounting,
+#: and (optionally) persistence -- args are (execution_id, node_id, agent_id,
+#: redacted arguments, result).
+ToolObserver = Callable[[str, str | None, str, JsonDict, ToolResult], Awaitable[None]]
 
 
 async def _allow_all(agent_id: str, tool: str, arguments: JsonDict) -> ToolDecision:
@@ -458,8 +460,14 @@ class AgentRuntime:
                 final.append(outcome)
 
         if self._observe_tool is not None:
-            for result in final:
-                await self._observe_tool(definition.id, result)
+            for call, result in zip(calls, final, strict=True):
+                await self._observe_tool(
+                    context.execution_id,
+                    context.node_id,
+                    definition.id,
+                    _redact(call.arguments),
+                    result,
+                )
         return tuple(final)
 
     async def _invoke_tool(

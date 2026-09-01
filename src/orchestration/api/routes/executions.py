@@ -32,6 +32,7 @@ from orchestration.errors import InputValidationError, NotFoundError
 from orchestration.persistence.repositories import (
     EventRepository,
     ExecutionRepository,
+    InvocationRepository,
     WorkflowRepository,
 )
 from orchestration.policies.approvals import ApprovalService
@@ -273,6 +274,38 @@ async def get_execution_events(
     event_filter = EventFilter(after_sequence=after_sequence, limit=limit)
     async with app_state.database.session() as session:
         return await EventRepository(session).query(execution_id, event_filter)
+
+
+@router.get("/{execution_id}/agent-invocations")
+async def get_agent_invocations(
+    execution_id: str, app_state: AppState = Depends(get_app_state)
+) -> list[JsonDict]:
+    """Every agent attempt this execution made -- model, tokens, cost, result.
+
+    Reads a table (`agent_invocations`) the engine already writes to on
+    every attempt via `InvocationRepository.record_agent` -- this is the
+    first route to read it back; nothing about how it's written changes.
+    """
+    async with app_state.database.session() as session:
+        return await InvocationRepository(session).agent_invocations(execution_id)
+
+
+@router.get("/{execution_id}/tool-invocations")
+async def get_tool_invocations(
+    execution_id: str, app_state: AppState = Depends(get_app_state)
+) -> list[JsonDict]:
+    """Every tool call this execution made -- which tool, policy effect, status.
+
+    Same story as agent invocations: `tool_invocations` is already written
+    on every call (it's also how idempotent resume works, via the claimed
+    idempotency key); this is the first route to expose it for inspection.
+    Arguments and results are deliberately omitted here -- they can contain
+    whatever an agent passed a tool, unfiltered by this endpoint, and a tool
+    inspector showing raw call payloads needs its own review before that's
+    safe to expose over HTTP.
+    """
+    async with app_state.database.session() as session:
+        return await InvocationRepository(session).tool_invocations(execution_id)
 
 
 def _format_sse(entry: dict[str, str]) -> str:

@@ -54,12 +54,14 @@ from orchestration.policies.approvals import ApprovalService
 from orchestration.supervisor.supervisor import Supervisor
 from orchestration.tools.registry import ToolRegistry
 from orchestration.workflow.executor import (
+    AgentInvocationWriter,
     ApprovalGate,
     CancelToken,
     CheckpointWriter,
     ExecutionResult,
     WorkflowExecutor,
     _noop_checkpoint,
+    _noop_invocation_recorder,
 )
 from orchestration.workflow.graph import WorkflowGraph
 
@@ -134,6 +136,8 @@ class ExecutionOrchestrator:
         events: Event recorder, likewise shared.
         checkpoint: Persists state; a fresh :class:`WorkflowExecutor` is built
             per turn but they all write through the same checkpoint function.
+        invocation_recorder: Records each agent attempt for audit/inspection,
+            likewise shared across every turn's executor.
         max_turns: Hard cap on supervisor turns.
         node_retry_policy: When set, overrides the retry policy of every node
             compiled from a ``delegate``/``parallel_delegate`` decision (a
@@ -154,6 +158,7 @@ class ExecutionOrchestrator:
         meter: BudgetMeter,
         events: ExecutionEventRecorder,
         checkpoint: CheckpointWriter = _noop_checkpoint,
+        invocation_recorder: AgentInvocationWriter = _noop_invocation_recorder,
         cancel_token: CancelToken | None = None,
         sandbox_root: Path | None = None,
         max_concurrent_nodes: int = 8,
@@ -168,6 +173,7 @@ class ExecutionOrchestrator:
         self._meter = meter
         self._events = events
         self._checkpoint = checkpoint
+        self._invocation_recorder = invocation_recorder
         self._cancel = cancel_token or CancelToken()
         self._sandbox_root = sandbox_root
         self._max_concurrent_nodes = max_concurrent_nodes
@@ -444,6 +450,7 @@ class ExecutionOrchestrator:
             events=self._events,
             meter=self._meter,
             checkpoint=self._checkpoint,
+            invocation_recorder=self._invocation_recorder,
             approval_gate=self._approval_gate(),
             cancel_token=self._cancel,
             max_concurrent_nodes=self._max_concurrent_nodes,

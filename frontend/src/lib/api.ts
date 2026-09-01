@@ -189,6 +189,39 @@ export function listPendingApprovals(executionId: string): Promise<ApprovalReque
   return request<ApprovalRequest[]>(`/executions/${executionId}/approvals`);
 }
 
+export interface AgentInvocation {
+  id: string;
+  node_id: string | null;
+  agent_id: string;
+  attempt: number;
+  status: string;
+  model_key: string | null;
+  tokens: number;
+  cost_usd: number;
+  tool_calls: number;
+  duration_seconds: number | null;
+  confidence: number | null;
+}
+
+export interface ToolInvocation {
+  id: string;
+  node_id: string | null;
+  agent_id: string | null;
+  tool: string;
+  attempt: number;
+  status: string;
+  policy_effect: string;
+  duration_seconds: number | null;
+}
+
+export function listAgentInvocations(executionId: string): Promise<AgentInvocation[]> {
+  return request<AgentInvocation[]>(`/executions/${executionId}/agent-invocations`);
+}
+
+export function listToolInvocations(executionId: string): Promise<ToolInvocation[]> {
+  return request<ToolInvocation[]>(`/executions/${executionId}/tool-invocations`);
+}
+
 export function decideApproval(
   executionId: string,
   decision: "approve" | "reject",

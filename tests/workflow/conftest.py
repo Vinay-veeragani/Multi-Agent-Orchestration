@@ -166,7 +166,13 @@ def build_harness(
             policy.record_call(agent_id, tool)
         return decision.effect, decision.reason
 
-    async def observe(agent_id: str, result: ToolResult) -> None:
+    async def observe(
+        execution_id: str,
+        node_id: str | None,
+        agent_id: str,
+        arguments: JsonDict,
+        result: ToolResult,
+    ) -> None:
         collected.append(result)
 
     runtime = AgentRuntime(

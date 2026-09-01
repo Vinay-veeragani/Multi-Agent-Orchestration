@@ -46,6 +46,7 @@ from pathlib import Path
 from orchestration.agents.registry import AgentRegistry
 from orchestration.agents.runtime import AgentRunContext, AgentRuntime
 from orchestration.budget.meter import BudgetMeter
+from orchestration.domain.agent import AgentInvocation
 from orchestration.domain.base import JsonDict, utc_now
 from orchestration.domain.enums import (
     CheckpointReason,
@@ -92,6 +93,11 @@ CheckpointWriter = Callable[
     [ExecutionState, Workflow, CheckpointReason, str | None], Awaitable[None]
 ]
 
+#: Records one agent invocation attempt for audit/inspection. Optional and
+#: best-effort, like ``CheckpointWriter`` -- an execution's correctness never
+#: depends on this succeeding.
+AgentInvocationWriter = Callable[[AgentInvocation], Awaitable[None]]
+
 #: Node statuses from which a node may (re-)enter the ready set.
 #:
 #: ``WAITING_FOR_APPROVAL`` is included because a resumed execution re-runs the
@@ -116,6 +122,10 @@ async def _noop_checkpoint(
     node_id: str | None,
 ) -> None:
     """Default writer: checkpointing is optional for in-memory runs."""
+
+
+async def _noop_invocation_recorder(invocation: AgentInvocation) -> None:
+    """Default writer: invocation recording is optional for in-memory runs."""
 
 
 class CancelToken:
@@ -208,6 +218,8 @@ class WorkflowExecutor:
         events: Event recorder bound to this execution.
         meter: Budget enforcement.
         checkpoint: Persists state. Defaults to a no-op for in-memory runs.
+        invocation_recorder: Records each agent attempt for audit/inspection.
+            Defaults to a no-op for in-memory runs, same as ``checkpoint``.
         approval_gate: Resolves approvals for approval nodes. Without one, an
             approval node always pauses -- correct for an in-memory run with no
             durable store, since there is nowhere for a decision to live.
@@ -228,6 +240,7 @@ class WorkflowExecutor:
         events: ExecutionEventRecorder,
         meter: BudgetMeter,
         checkpoint: CheckpointWriter = _noop_checkpoint,
+        invocation_recorder: AgentInvocationWriter = _noop_invocation_recorder,
         approval_gate: ApprovalGate | None = None,
         cancel_token: CancelToken | None = None,
         max_concurrent_nodes: int = 8,
@@ -241,6 +254,7 @@ class WorkflowExecutor:
         self._events = events
         self._meter = meter
         self._checkpoint = checkpoint
+        self._invocation_recorder = invocation_recorder
         self._approval_gate = approval_gate
         self._cancel = cancel_token or CancelToken()
         self._semaphore = asyncio.Semaphore(max_concurrent_nodes)
@@ -610,6 +624,7 @@ class WorkflowExecutor:
             attempt=attempt,
         )
         result = await self._runtime.run(definition, run_context)
+        await self._invocation_recorder(result.invocation)
 
         if result.pending_approval is not None:
             raise result.pending_approval

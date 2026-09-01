@@ -561,6 +561,93 @@ class TestStaticWorkflowExecution:
         assert body["node_states"]["a"]["status"] == NodeStatus.SUCCEEDED.value
 
 
+class TestInvocations:
+    """Agent/tool invocation audit rows, written live by
+    `InvocationRecorder` (see `persistence/invocation_recorder.py`) as an
+    execution runs -- these routes are the first consumers of a table that,
+    before this, only `tests/integration/test_persistence.py` wrote to
+    directly. Tool-call arguments/results are deliberately not part of what
+    these routes return (see the route's own docstring); these tests check
+    what is returned, not the full row.
+    """
+
+    async def test_agent_invocations_are_recorded_and_readable(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        workflow = {
+            "name": "api-invocation-inspect",
+            "nodes": [
+                {"id": "a", "kind": "agent", "agent_id": "research_agent", "output_key": "a"},
+                {"id": "b", "kind": "terminal"},
+            ],
+            "edges": [{"source": "a", "target": "b"}],
+        }
+        provider = MockProvider([MockRule(name="agent", responses=(agent_output("done"),))])
+        async with _client(database, redis_coordinator, provider) as client:
+            created_workflow = await client.post("/workflows", json=workflow)
+            workflow_id = created_workflow.json()["id"]
+            created = await client.post(
+                "/executions",
+                json={"task": "inspect agent invocations", "workflow_id": workflow_id},
+            )
+            execution_id = created.json()["execution_id"]
+            await _wait_for_terminal(client, execution_id)
+
+            response = await client.get(f"/executions/{execution_id}/agent-invocations")
+        assert response.status_code == 200
+        invocations = response.json()
+        assert len(invocations) == 1
+        assert invocations[0]["agent_id"] == "research_agent"
+        assert invocations[0]["status"] == "succeeded"
+
+    async def test_tool_invocations_are_recorded_and_readable(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        workflow = {
+            "name": "api-tool-invocation-inspect",
+            "nodes": [
+                {"id": "a", "kind": "agent", "agent_id": "data_agent", "output_key": "a"},
+                {"id": "b", "kind": "terminal"},
+            ],
+            "edges": [{"source": "a", "target": "b"}],
+        }
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="agent",
+                    responses=(
+                        json.dumps(
+                            {
+                                "tool_calls": [
+                                    {"name": "calculator", "arguments": {"expression": "2+2"}}
+                                ]
+                            }
+                        ),
+                        agent_output("computed 2+2"),
+                    ),
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created_workflow = await client.post("/workflows", json=workflow)
+            workflow_id = created_workflow.json()["id"]
+            created = await client.post(
+                "/executions",
+                json={"task": "inspect tool invocations", "workflow_id": workflow_id},
+            )
+            execution_id = created.json()["execution_id"]
+            await _wait_for_terminal(client, execution_id)
+
+            response = await client.get(f"/executions/{execution_id}/tool-invocations")
+        assert response.status_code == 200
+        invocations = response.json()
+        assert len(invocations) == 1
+        assert invocations[0]["tool"] == "calculator"
+        assert invocations[0]["agent_id"] == "data_agent"
+        assert invocations[0]["status"] == "succeeded"
+        assert invocations[0]["policy_effect"] == "allow"
+
+
 class TestEventStream:
     async def _run_to_completion(self, client: httpx.AsyncClient) -> str:
         created = await client.post("/executions", json={"task": "compare CRM vendors"})

@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ApiError, getExecution, getExecutionEvents, listPendingApprovals } from "@/lib/api";
+import {
+  ApiError,
+  getExecution,
+  getExecutionEvents,
+  listAgentInvocations,
+  listPendingApprovals,
+  listToolInvocations,
+} from "@/lib/api";
 import { ApprovalPanel } from "./approval-panel";
 import { LiveEvents } from "./live-events";
 
@@ -33,6 +40,10 @@ export default async function ExecutionDetailPage({
     state.status === "waiting_for_approval"
       ? await listPendingApprovals(id).catch(() => [])
       : [];
+  const [agentInvocations, toolInvocations] = await Promise.all([
+    listAgentInvocations(id).catch(() => []),
+    listToolInvocations(id).catch(() => []),
+  ]);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
@@ -99,6 +110,60 @@ export default async function ExecutionDetailPage({
           </table>
         </div>
       </section>
+
+      {(agentInvocations.length > 0 || toolInvocations.length > 0) && (
+        <section className="mt-8">
+          <h2 className="mb-2 text-sm font-medium text-neutral-500">Invocations</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
+              <div className="border-b border-black/10 bg-black/5 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-white/15 dark:bg-white/5">
+                Agents ({agentInvocations.length})
+              </div>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                  {agentInvocations.map((inv) => (
+                    <tr key={inv.id}>
+                      <td className="px-3 py-2 font-mono">{inv.agent_id}</td>
+                      <td className="px-3 py-2">{inv.status}</td>
+                      <td className="px-3 py-2 text-right text-neutral-500">
+                        {inv.tokens} tok &middot; ${inv.cost_usd.toFixed(4)}
+                      </td>
+                    </tr>
+                  ))}
+                  {agentInvocations.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-3 text-neutral-500">No agent calls yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
+              <div className="border-b border-black/10 bg-black/5 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-white/15 dark:bg-white/5">
+                Tool calls ({toolInvocations.length})
+              </div>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                  {toolInvocations.map((inv) => (
+                    <tr key={inv.id}>
+                      <td className="px-3 py-2 font-mono">{inv.tool}</td>
+                      <td className="px-3 py-2">{inv.status}</td>
+                      <td className="px-3 py-2 text-right text-neutral-500">
+                        {inv.policy_effect}
+                      </td>
+                    </tr>
+                  ))}
+                  {toolInvocations.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-3 text-neutral-500">No tool calls yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Cost" value={`$${state.budget_usage.cost_usd.toFixed(4)}`} />

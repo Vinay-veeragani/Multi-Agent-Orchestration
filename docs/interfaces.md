@@ -33,6 +33,8 @@ prints.
 | `POST /executions/{execution_id}/approve` | Decide a pending approval: granted |
 | `POST /executions/{execution_id}/reject` | Decide a pending approval: refused |
 | `GET /executions/{execution_id}/events` | The durable, ordered event log |
+| `GET /executions/{execution_id}/agent-invocations` | Every agent attempt -- model, tokens, cost, status |
+| `GET /executions/{execution_id}/tool-invocations` | Every tool call -- tool, status, policy effect (arguments/results omitted) |
 | `GET /executions/{execution_id}/stream` | Live event log over Server-Sent Events (best-effort, via Redis -- see below) |
 | `GET /executions/{execution_id}/trace` | An event-derived trace view (not a live OTel query -- see the endpoint's own docstring) |
 | `GET /health` | Database + Redis reachability |

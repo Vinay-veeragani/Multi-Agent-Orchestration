@@ -262,6 +262,27 @@ clean, `npx eslint .` is clean, and a real execution created via `curl`
 rendered correctly on both the dashboard and detail page, with the SSE
 proxy streaming real, correctly-ordered events end to end.
 
+Also built: a tool/agent invocation inspection panel on the detail page,
+backed by two new routes (`GET /executions/{id}/agent-invocations`,
+`GET /executions/{id}/tool-invocations`). Building this surfaced a real
+pre-existing gap: `agent_invocations`/`tool_invocations` (§4) had a full
+domain model, table, and repository, but nothing in the live execution
+path actually wrote to them -- `InvocationRepository.record_agent`/
+`claim_tool`/`complete_tool` were only ever exercised by
+`tests/integration/test_persistence.py` directly. Fixed by wiring real
+writes: `WorkflowExecutor`/`ExecutionOrchestrator` gained an
+`invocation_recorder` (mirroring the existing `CheckpointWriter` pattern,
+same no-op default) called after every agent run, and `AgentRuntime`'s
+previously-unused `ToolObserver` hook (widened from `(agent_id, result)` to
+`(execution_id, node_id, agent_id, redacted_arguments, result)`) is now
+wired to record every tool call. Both flow through a new
+`persistence/invocation_recorder.py::InvocationRecorder`, constructed once
+per execution in `api/runner.py`. Verified against the real running API: a
+live execution's agents were recorded and readable through both the new
+routes and the frontend panel. Known limitation, documented rather than
+silently handled: a direct `TOOL`-kind workflow node (no agent in the
+loop) bypasses `AgentRuntime` entirely and is not yet wired for recording.
+
 Also built: a human-in-the-loop approve/reject UI on the detail page,
 backed by a new `GET /executions/{id}/approvals` route (exposing the
 previously-unused `ApprovalService.pending_for`) and a Next.js Server

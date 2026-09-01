@@ -150,7 +150,13 @@ async def run_scenario(
         state.budget_usage = BudgetUsage()
         meter = BudgetMeter(budget, state.budget_usage)
 
-        async def observe_tool(_agent_id: str, result: ToolResult) -> None:
+        async def observe_tool(
+            _execution_id: str,
+            _node_id: str | None,
+            _agent_id: str,
+            _arguments: JsonDict,
+            result: ToolResult,
+        ) -> None:
             tool_results.append(result)
 
         if arm.uses_supervisor:

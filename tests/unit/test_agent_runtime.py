@@ -397,7 +397,13 @@ class TestToolUse:
     async def test_tool_observer_is_notified(self, context: AgentRunContext) -> None:
         observed: list[tuple[str, str]] = []
 
-        async def observe(agent_id: str, result: ToolResult) -> None:
+        async def observe(
+            execution_id: str,
+            node_id: str | None,
+            agent_id: str,
+            arguments: JsonDict,
+            result: ToolResult,
+        ) -> None:
             observed.append((agent_id, result.tool))
 
         provider = MockProvider(
