@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -274,7 +275,125 @@ class TestDynamicExecutions:
         assert first.json()["execution_id"] == second.json()["execution_id"]
 
 
+async def _wait_for_listed_status(
+    client: httpx.AsyncClient, execution_id: str, status_value: str, *, attempts: int = 100
+) -> list[dict[str, Any]]:
+    """Poll ``GET /executions`` until this id shows the given status.
+
+    ``GET /executions/{id}`` (what :func:`_wait_for_terminal` polls) can
+    report a status the durable ``executions`` header row does not yet have:
+    the in-memory :class:`ExecutionState` a live run's :class:`RunHandle`
+    exposes is updated before the checkpoint write that persists that same
+    status to the row `GET /executions` reads from actually commits. A
+    single immediate read after `_wait_for_terminal` returns is therefore
+    racy; a short poll here is not a workaround for a bug so much as
+    documentation of the real (and brief) lag between "live" and "durable"
+    views the rest of this API already distinguishes explicitly (see
+    `_load_state`'s docstring in `routes/executions.py`).
+    """
+    for _ in range(attempts):
+        listing = await client.get(
+            "/executions", params={"status_filter": status_value, "limit": 5000}
+        )
+        rows: list[dict[str, Any]] = listing.json()
+        if any(row["id"] == execution_id for row in rows):
+            return rows
+        await asyncio.sleep(0.05)
+    raise AssertionError(
+        f"execution {execution_id!r} never appeared in the {status_value!r} listing"
+    )
+
+
+class TestListExecutions:
+    async def test_a_created_execution_appears_in_the_listing(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(routing_decision("finalize", answer="ok"),),
+                    priority=10,
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post("/executions", json={"task": "a listed task"})
+            execution_id = created.json()["execution_id"]
+            await _wait_for_terminal(client, execution_id)
+
+            # A high explicit limit, not the route's default-50: this test
+            # shares one database with the rest of the (large) integration
+            # suite, so plenty of other rows can already exist by the time
+            # this one runs. The default limit is a reasonable dashboard
+            # default and is left alone; only the test needs enough headroom
+            # to not depend on this row's rank among everything the suite
+            # has created so far.
+            listing = await client.get("/executions", params={"limit": 5000})
+        assert listing.status_code == 200
+        ids = {row["id"] for row in listing.json()}
+        assert execution_id in ids
+
+    async def test_the_listing_can_be_filtered_by_status(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(routing_decision("finalize", answer="ok"),),
+                    priority=10,
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post("/executions", json={"task": "a filtered task"})
+            execution_id = created.json()["execution_id"]
+            await _wait_for_terminal(client, execution_id)
+
+            rows = await _wait_for_listed_status(
+                client, execution_id, ExecutionStatus.SUCCEEDED.value
+            )
+        assert all(row["status"] == ExecutionStatus.SUCCEEDED.value for row in rows)
+
+
 class TestApprovalFlow:
+    async def test_listing_pending_approvals_shows_what_is_being_asked(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(
+                        routing_decision(
+                            "request_human_approval",
+                            approval_action="publish the report externally",
+                            approval_risk_reason="visible to customers",
+                        ),
+                        routing_decision("finalize", answer="published"),
+                    ),
+                    priority=10,
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post("/executions", json={"task": "publish a report"})
+            execution_id = created.json()["execution_id"]
+            paused = await _wait_for_terminal(client, execution_id)
+            assert paused["status"] == ExecutionStatus.WAITING_FOR_APPROVAL.value
+
+            pending = await client.get(f"/executions/{execution_id}/approvals")
+        assert pending.status_code == 200
+        approvals = pending.json()
+        assert len(approvals) == 1
+        assert approvals[0]["action"] == "publish the report externally"
+        assert approvals[0]["risk_reason"] == "visible to customers"
+        assert approvals[0]["status"] == "pending"
+
     async def test_approving_a_pending_execution_lets_it_finish(
         self, database: Database, redis_coordinator: RedisCoordinator
     ) -> None:
@@ -440,6 +559,80 @@ class TestStaticWorkflowExecution:
 
         assert body["status"] == ExecutionStatus.SUCCEEDED.value
         assert body["node_states"]["a"]["status"] == NodeStatus.SUCCEEDED.value
+
+
+class TestEventStream:
+    async def _run_to_completion(self, client: httpx.AsyncClient) -> str:
+        created = await client.post("/executions", json={"task": "compare CRM vendors"})
+        execution_id: str = created.json()["execution_id"]
+        await _wait_for_terminal(client, execution_id)
+        return execution_id
+
+    @staticmethod
+    def _parse_sse(lines: list[str]) -> list[dict[str, Any]]:
+        """Reassemble ``id:``/``event:``/``data:`` line groups into messages."""
+        messages: list[dict[str, Any]] = []
+        current: dict[str, Any] = {}
+        for line in lines:
+            if line == "":
+                if current:
+                    messages.append(current)
+                    current = {}
+                continue
+            field, _, value = line.partition(": ")
+            if field == "data":
+                current["data"] = json.loads(value)
+            else:
+                current[field] = value
+        if current:
+            messages.append(current)
+        return messages
+
+    async def test_streaming_a_finished_execution_replays_its_backlog_and_closes(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(
+                        routing_decision("delegate", agents=["research_agent"]),
+                        routing_decision("finalize", answer="five vendors found"),
+                    ),
+                    priority=10,
+                ),
+                MockRule(name="agent", responses=(agent_output("five vendors found"),)),
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            execution_id = await self._run_to_completion(client)
+            async with client.stream(
+                "GET", f"/executions/{execution_id}/stream"
+            ) as response:
+                assert response.status_code == 200
+                assert response.headers["content-type"].startswith("text/event-stream")
+                lines = [line async for line in response.aiter_lines()]
+
+        messages = self._parse_sse(lines)
+        assert len(messages) > 0
+        assert all(m["data"]["execution_id"] == execution_id for m in messages)
+        # Sequence numbers must be gapless and increasing: the whole point of a
+        # replay is that a client can trust it saw everything, in order.
+        sequences = [m["data"]["sequence"] for m in messages]
+        assert sequences == sorted(sequences)
+        assert messages[-1]["data"]["type"] in {
+            "execution_completed",
+            "execution_failed",
+            "execution_cancelled",
+        }
+
+    async def test_streaming_an_unknown_execution_is_404(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get("/executions/exec_nonexistent/stream")
+        assert response.status_code == 404
 
 
 class TestCancellation:

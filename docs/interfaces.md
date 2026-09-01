@@ -24,13 +24,16 @@ prints.
 | `POST /workflows` | Register a workflow (validated -- rejects one that could never execute) |
 | `GET /workflows` | List registered workflows |
 | `GET /workflows/{workflow_id}` | Fetch one workflow |
+| `GET /executions` | Recent executions, newest first (`limit`, `status_filter`) -- a dashboard's listing source |
 | `POST /executions` | Start an execution -- dynamic (omit `workflow_id`) or against a registered workflow |
 | `GET /executions/{execution_id}` | Current state (live, if running in this process; the durable checkpoint otherwise) |
 | `POST /executions/{execution_id}/cancel` | Cooperative cancellation of an execution in flight |
 | `POST /executions/{execution_id}/resume` | Resume an execution stranded by a crashed/restarted process |
+| `GET /executions/{execution_id}/approvals` | Pending approvals -- action, risk reason, parameters -- for a HITL UI to render before deciding |
 | `POST /executions/{execution_id}/approve` | Decide a pending approval: granted |
 | `POST /executions/{execution_id}/reject` | Decide a pending approval: refused |
 | `GET /executions/{execution_id}/events` | The durable, ordered event log |
+| `GET /executions/{execution_id}/stream` | Live event log over Server-Sent Events (best-effort, via Redis -- see below) |
 | `GET /executions/{execution_id}/trace` | An event-derived trace view (not a live OTel query -- see the endpoint's own docstring) |
 | `GET /health` | Database + Redis reachability |
 | `GET /metrics` | Prometheus exposition format |
@@ -46,6 +49,25 @@ Execution runs as a background `asyncio` task in the API process
 (`ExecutionRunner`) -- a single-process design; see the "What this project
 is NOT" section of the root README for the documented limit this implies for
 cross-process cancellation.
+
+### Live event streaming
+
+`GET /executions/{execution_id}/stream` follows an execution's events as
+Server-Sent Events (`text/event-stream`), reading from the Redis stream
+`RedisEventSink` already publishes every event to. It replays the backlog
+first (from the stream's start, or from `?after_id=<redis-stream-id>` to
+resume a dropped connection), then blocks on Redis `XREAD` for live events,
+and closes the connection itself once a terminal execution event
+(`execution_completed`/`_failed`/`_cancelled`) has been sent.
+
+This is a **best-effort live view, not the audit trail** -- the stream is
+capped at 10,000 entries and, per the event bus's own fault-tolerance
+contract, silently drops an event if Redis was briefly unreachable when it
+was emitted. `GET /executions/{execution_id}/events` against PostgreSQL is
+still the complete, durable history. It also still requires the same
+`X-API-Key` header as every other route on this router, which rules out a
+plain browser `EventSource` (no custom headers) -- a browser client needs
+`fetch` + a `ReadableStream` reader, or a small server-side proxy.
 
 ## CLI
 

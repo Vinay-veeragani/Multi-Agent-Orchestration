@@ -7,7 +7,11 @@ other route here is a thin read or a signal into that runner.
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import StreamingResponse
 
 from orchestration.api.schemas import (
     ApprovalDecisionRequest,
@@ -20,6 +24,7 @@ from orchestration.api.state import AppState
 from orchestration.domain.approval import ApprovalRequest
 from orchestration.domain.base import JsonDict, new_id
 from orchestration.domain.budget import Budget
+from orchestration.domain.enums import EventType, ExecutionStatus
 from orchestration.domain.events import EventFilter, ExecutionEvent
 from orchestration.domain.execution import ExecutionState
 from orchestration.domain.workflow import Task
@@ -31,6 +36,12 @@ from orchestration.persistence.repositories import (
 )
 from orchestration.policies.approvals import ApprovalService
 from orchestration.runtime.orchestrator import seed_dynamic_workflow
+
+_TERMINAL_STREAM_EVENT_VALUES = {
+    EventType.EXECUTION_COMPLETED.value,
+    EventType.EXECUTION_FAILED.value,
+    EventType.EXECUTION_CANCELLED.value,
+}
 
 router = APIRouter(
     prefix="/executions", tags=["executions"], dependencies=[Depends(require_api_key)]
@@ -52,6 +63,25 @@ def _requested_budget(request: CreateExecutionRequest, settings_budget: Budget) 
         max_tool_calls=None,
     )
     return requested.tightened_to(settings_budget)
+
+
+@router.get("")
+async def list_executions(
+    limit: int = 50,
+    status_filter: ExecutionStatus | None = None,
+    app_state: AppState = Depends(get_app_state),
+) -> list[JsonDict]:
+    """Recent executions, newest first -- a dashboard's listing source.
+
+    Summaries only (id, workflow, status, task, cost, timestamps), from
+    :meth:`ExecutionRepository.list_recent`, which existed unused before this
+    route -- the CLI and every other caller so far has only ever needed one
+    execution by id at a time. Reads the durable table directly rather than
+    ``ExecutionRunner``'s in-memory state, so a completed run still shows up
+    correctly here after the process that ran it has moved on.
+    """
+    async with app_state.database.session() as session:
+        return await ExecutionRepository(session).list_recent(limit=limit, status=status_filter)
 
 
 @router.post("", response_model=ExecutionAccepted, status_code=status.HTTP_202_ACCEPTED)
@@ -190,6 +220,21 @@ async def _resolve_pending_approval(
     return pending[0]
 
 
+@router.get("/{execution_id}/approvals", response_model=list[ApprovalRequest])
+async def list_pending_approvals(
+    execution_id: str, app_state: AppState = Depends(get_app_state)
+) -> list[ApprovalRequest]:
+    """What a human is actually being asked to decide, in full.
+
+    A HITL UI needs the ``action``/``risk_reason``/``parameters`` this
+    returns before it can render an approve/reject prompt -- ``approve``/
+    ``reject`` themselves only accept a decision, they were never meant to
+    double as a way to read what's pending.
+    """
+    service = ApprovalService(app_state.database)
+    return await service.pending_for(execution_id)
+
+
 @router.post("/{execution_id}/approve", response_model=ApprovalRequest)
 async def approve_execution(
     execution_id: str,
@@ -228,6 +273,99 @@ async def get_execution_events(
     event_filter = EventFilter(after_sequence=after_sequence, limit=limit)
     async with app_state.database.session() as session:
         return await EventRepository(session).query(execution_id, event_filter)
+
+
+def _format_sse(entry: dict[str, str]) -> str:
+    """Render one Redis stream entry as one SSE message.
+
+    The stream stores every field as a string (Redis' own constraint) and
+    ``payload`` is itself already JSON-encoded there (see
+    :meth:`~orchestration.domain.events.ExecutionEvent.to_stream_fields`); it
+    is decoded once here so the client receives one clean JSON object rather
+    than a double-encoded string.
+    """
+    try:
+        payload: JsonDict = json.loads(entry.get("payload") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    event_type = entry.get("type", "")
+    data = {
+        "id": entry.get("id", ""),
+        "execution_id": entry.get("execution_id", ""),
+        "sequence": int(entry["sequence"]) if entry.get("sequence") else None,
+        "type": event_type,
+        "severity": entry.get("severity", ""),
+        "node_id": entry.get("node_id") or None,
+        "agent_id": entry.get("agent_id") or None,
+        "tool": entry.get("tool") or None,
+        "message": entry.get("message", ""),
+        "payload": payload,
+        "created_at": entry.get("created_at", ""),
+    }
+    stream_id = entry.get("_id", "")
+    return f"id: {stream_id}\nevent: {event_type or 'message'}\ndata: {json.dumps(data)}\n\n"
+
+
+async def _stream_events(
+    execution_id: str, app_state: AppState, after_id: str
+) -> AsyncIterator[str]:
+    """Backlog, then live: replay from ``after_id``, then follow the stream.
+
+    Stops as soon as a terminal execution event is seen or the execution is
+    already terminal -- there is nothing more to wait for, so the connection
+    closes instead of blocking on ``XREAD`` forever.
+    """
+    cursor = after_id
+    backlog = await app_state.redis.read_events(execution_id, after=after_id, count=10_000)
+    for entry in backlog:
+        cursor = entry["_id"]
+        yield _format_sse(entry)
+        if entry.get("type") in _TERMINAL_STREAM_EVENT_VALUES:
+            return
+
+    state = await _load_state(execution_id, app_state)
+    if state.status.is_terminal:
+        return
+
+    async for entry in app_state.redis.tail_events(execution_id, last_id=cursor):
+        yield _format_sse(entry)
+        if entry.get("type") in _TERMINAL_STREAM_EVENT_VALUES:
+            return
+
+
+@router.get("/{execution_id}/stream")
+async def stream_execution_events(
+    execution_id: str,
+    after_id: str = "-",
+    app_state: AppState = Depends(get_app_state),
+) -> StreamingResponse:
+    """Live execution events over Server-Sent Events.
+
+    Best-effort, not authoritative: events are read from the Redis stream
+    :class:`~orchestration.coordination.redis.RedisEventSink` publishes to,
+    which is capped (10,000 entries) and -- per the event bus's own
+    fault-tolerance contract, where a sink failure is recorded but never
+    fails the execution -- can silently miss an event if Redis was briefly
+    unavailable when it was emitted. ``GET /executions/{id}/events`` against
+    PostgreSQL remains the durable, complete history; this endpoint is for a
+    live view, not an audit trail.
+
+    ``after_id`` resumes a dropped connection from a specific Redis stream id
+    (the ``id`` field of the last SSE message received); left at its default
+    ``"-"``, the full backlog held in the stream replays before live events
+    start.
+
+    Requires the same ``X-API-Key`` header as every other route on this
+    router -- a plain browser ``EventSource`` cannot set a custom header, so
+    a browser client needs a ``fetch`` + ``ReadableStream`` reader (or a
+    server-side proxy) rather than ``EventSource`` directly.
+    """
+    await _load_state(execution_id, app_state)  # raises NotFoundError if unknown
+    return StreamingResponse(
+        _stream_events(execution_id, app_state, after_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{execution_id}/trace")
