@@ -24,10 +24,13 @@ from fastapi import FastAPI
 from orchestration.api.app import create_app
 from orchestration.config import Settings
 from orchestration.coordination.redis import RedisCoordinator
+from orchestration.domain.base import utc_now
 from orchestration.domain.enums import ExecutionStatus, NodeStatus
+from orchestration.domain.evaluation import ArmMetrics, BenchmarkReport
 from orchestration.llm.factory import LLMClient
 from orchestration.llm.mock import MockProvider, MockRule, agent_output, routing_decision
 from orchestration.persistence.database import Database
+from orchestration.persistence.repositories import BenchmarkRepository
 
 pytestmark = pytest.mark.integration
 
@@ -728,4 +731,64 @@ class TestCancellation:
     ) -> None:
         async with _client(database, redis_coordinator, MockProvider()) as client:
             response = await client.post("/executions/exec_nonexistent/cancel")
+        assert response.status_code == 404
+
+
+class TestBenchmarks:
+    """The routes are new; the write path (`BenchmarkRepository.save`, called
+    from `orchestration.evaluation.report.run_benchmark`) is not -- see
+    docs/evaluation-benchmark.md. Rather than running a real (slow) benchmark
+    here, these tests save a report directly through the same repository the
+    CLI uses, then read it back over HTTP.
+    """
+
+    def _report(self, report_id: str) -> BenchmarkReport:
+        now = utc_now()
+        return BenchmarkReport(
+            id=report_id,
+            started_at=now,
+            completed_at=now,
+            git_sha="abc1234",
+            provider_note="mock provider; latency figures are not real LLM latency",
+            scenario_count=1,
+            arms=(
+                ArmMetrics(arm="baseline", scenarios_run=1, scenarios_passed=0),
+                ArmMetrics(arm="supervisor", scenarios_run=1, scenarios_passed=1),
+            ),
+        )
+
+    async def test_a_saved_report_appears_in_the_listing(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        report = self._report("eval_api_listing_test")
+        async with database.session() as session:
+            await BenchmarkRepository(session).save(report)
+
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get("/benchmarks")
+        assert response.status_code == 200
+        ids = {row["id"] for row in response.json()}
+        assert report.id in ids
+
+    async def test_a_saved_report_is_readable_in_full(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        report = self._report("eval_api_detail_test")
+        async with database.session() as session:
+            await BenchmarkRepository(session).save(report)
+
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get(f"/benchmarks/{report.id}")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == report.id
+        arms = {a["arm"]: a for a in body["arms"]}
+        assert arms["baseline"]["scenarios_passed"] == 0
+        assert arms["supervisor"]["scenarios_passed"] == 1
+
+    async def test_an_unknown_report_is_404(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get("/benchmarks/eval_nonexistent")
         assert response.status_code == 404

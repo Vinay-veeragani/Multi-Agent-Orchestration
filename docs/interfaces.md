@@ -37,6 +37,8 @@ prints.
 | `GET /executions/{execution_id}/tool-invocations` | Every tool call -- tool, status, policy effect (arguments/results omitted) |
 | `GET /executions/{execution_id}/stream` | Live event log over Server-Sent Events (best-effort, via Redis -- see below) |
 | `GET /executions/{execution_id}/trace` | An event-derived trace view (not a live OTel query -- see the endpoint's own docstring) |
+| `GET /benchmarks` | Recent evaluation reports (`orchestrator benchmark` already persists these) |
+| `GET /benchmarks/{report_id}` | One full report -- every arm's metrics and every scenario result |
 | `GET /health` | Database + Redis reachability |
 | `GET /metrics` | Prometheus exposition format |
 

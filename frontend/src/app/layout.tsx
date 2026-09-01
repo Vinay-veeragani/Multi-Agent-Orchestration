@@ -30,6 +30,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="font-medium">
               Agent Orchestration Engine
             </Link>
+            <Link href="/benchmarks" className="text-sm text-neutral-500 hover:underline">
+              Benchmarks
+            </Link>
           </div>
         </header>
         <main className="flex-1">{children}</main>

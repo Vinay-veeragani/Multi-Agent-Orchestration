@@ -233,4 +233,61 @@ export function decideApproval(
   });
 }
 
+export interface BenchmarkRunSummary {
+  id: string;
+  git_sha: string | null;
+  scenario_count: number;
+  started_at: string;
+  completed_at: string;
+}
+
+export interface ArmMetrics {
+  arm: string;
+  scenarios_run: number;
+  scenarios_passed: number;
+  routing_accuracy: number | null;
+  tool_selection_accuracy: number | null;
+  tool_argument_validity: number | null;
+  recovery_success_rate: number | null;
+  avg_agent_steps: number;
+  avg_latency_seconds: number;
+  p50_latency_seconds: number;
+  p95_latency_seconds: number;
+  p99_latency_seconds: number;
+  total_cost_usd: number;
+  total_tokens: number;
+  avg_max_parallelism: number;
+}
+
+export interface ScenarioResult {
+  scenario_id: string;
+  category: string;
+  arm: string;
+  passed: boolean;
+  final_status: string | null;
+  failures: string[];
+  latency_seconds: number;
+  cost_usd: number;
+}
+
+export interface BenchmarkReport {
+  id: string;
+  started_at: string;
+  completed_at: string;
+  git_sha: string | null;
+  environment: Record<string, unknown>;
+  provider_note: string;
+  scenario_count: number;
+  arms: ArmMetrics[];
+  results: ScenarioResult[];
+}
+
+export function listBenchmarkRuns(limit = 20): Promise<BenchmarkRunSummary[]> {
+  return request<BenchmarkRunSummary[]>(`/benchmarks?limit=${limit}`);
+}
+
+export function getBenchmarkRun(reportId: string): Promise<BenchmarkReport> {
+  return request<BenchmarkReport>(`/benchmarks/${reportId}`);
+}
+
 export { config as orchestratorConfig, ApiError };

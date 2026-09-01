@@ -262,6 +262,18 @@ clean, `npx eslint .` is clean, and a real execution created via `curl`
 rendered correctly on both the dashboard and detail page, with the SSE
 proxy streaming real, correctly-ordered events end to end.
 
+Also built: an evaluation/ablation dashboard (`/benchmarks`,
+`/benchmarks/[id]`), backed by two new routes
+(`GET /benchmarks`, `GET /benchmarks/{report_id}`) reading
+`BenchmarkRepository` -- whose write side (`save`, called from
+`evaluation/report.py::run_benchmark`) was already live, unlike the
+invocation tables below; this slice needed no engine wiring, only routes
+and UI. The detail page renders the same arm-comparison numbers
+`docs/evaluation-benchmark.md` documents, plus a per-category,
+per-scenario pass/fail grid across arms. Verified against a real
+`orchestrator benchmark --category simple` run: the persisted report
+appeared correctly in both routes and both pages.
+
 Also built: a tool/agent invocation inspection panel on the detail page,
 backed by two new routes (`GET /executions/{id}/agent-invocations`,
 `GET /executions/{id}/tool-invocations`). Building this surfaced a real
