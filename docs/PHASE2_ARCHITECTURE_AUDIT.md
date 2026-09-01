@@ -262,6 +262,15 @@ clean, `npx eslint .` is clean, and a real execution created via `curl`
 rendered correctly on both the dashboard and detail page, with the SSE
 proxy streaming real, correctly-ordered events end to end.
 
+Also built: execution replay on the detail page (`replay.tsx`) -- a
+play/pause/step/scrub control over a terminal execution's already-fetched
+event list. Needed no new backend data: node status at any point in the
+timeline is reconstructed client-side purely from
+`(event.type, event.node_id)`, which every node-lifecycle event already
+carries as top-level fields (see `WorkflowExecutor`'s `emit()` calls in
+§6). Replaces the previous static "Event log" section for terminal
+executions; an in-flight execution still gets the live SSE view.
+
 Also built: an evaluation/ablation dashboard (`/benchmarks`,
 `/benchmarks/[id]`), backed by two new routes
 (`GET /benchmarks`, `GET /benchmarks/{report_id}`) reading

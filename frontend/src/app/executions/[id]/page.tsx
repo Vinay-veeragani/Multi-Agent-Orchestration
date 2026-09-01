@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { ApprovalPanel } from "./approval-panel";
 import { LiveEvents } from "./live-events";
+import { Replay } from "./replay";
 
 const STATUS_BADGE: Record<string, string> = {
   succeeded: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400",
@@ -177,7 +178,7 @@ export default async function ExecutionDetailPage({
 
       <section className="mt-8">
         {isTerminal ? (
-          <RecordedEvents events={events} />
+          <Replay events={events} nodeIds={Object.keys(state.node_states)} />
         ) : (
           <LiveEvents executionId={state.execution_id} />
         )}
@@ -191,31 +192,6 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-black/10 p-3 dark:border-white/15">
       <div className="text-xs text-neutral-500">{label}</div>
       <div className="mt-1 font-mono text-sm">{value}</div>
-    </div>
-  );
-}
-
-function RecordedEvents({
-  events,
-}: {
-  events: Awaited<ReturnType<typeof getExecutionEvents>>;
-}) {
-  return (
-    <div className="rounded-lg border border-black/10 dark:border-white/15">
-      <div className="border-b border-black/10 px-4 py-2 text-sm font-medium dark:border-white/15">
-        Event log ({events.length})
-      </div>
-      <ol className="max-h-96 divide-y divide-black/5 overflow-y-auto text-sm dark:divide-white/10">
-        {events.map((event) => (
-          <li key={event.id} className="px-4 py-2">
-            <span className="font-mono text-xs text-neutral-500">#{event.sequence}</span>{" "}
-            <span className="font-medium">{event.type}</span>{" "}
-            {event.message && (
-              <span className="text-neutral-600 dark:text-neutral-400">{event.message}</span>
-            )}
-          </li>
-        ))}
-      </ol>
     </div>
   );
 }
