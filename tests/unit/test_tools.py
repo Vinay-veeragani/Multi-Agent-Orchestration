@@ -85,9 +85,18 @@ class TestSandboxResolution:
         with pytest.raises(InputValidationError, match="escapes the tool sandbox"):
             context.resolve_in_sandbox(escape)
 
-    def test_rejects_an_absolute_path_outside(self, context: ToolContext) -> None:
+    def test_rejects_an_absolute_path_outside(
+        self, context: ToolContext, sandbox: Path
+    ) -> None:
+        # A Windows drive-letter path (the original literal here) is not
+        # absolute on POSIX -- `Path("C:/...").is_absolute()` is False on
+        # Linux, so the same test passed on Windows only by accident and
+        # never actually exercised this branch on the CI runner (ubuntu).
+        # Built from a sibling of the sandbox root instead, so it is
+        # genuinely absolute and outside on every platform.
+        outside = str((sandbox.parent / "definitely-outside" / "hosts").resolve())
         with pytest.raises(InputValidationError, match="escapes the tool sandbox"):
-            context.resolve_in_sandbox("C:/Windows/System32/drivers/etc/hosts")
+            context.resolve_in_sandbox(outside)
 
     def test_accepts_an_absolute_path_inside(self, context: ToolContext, sandbox: Path) -> None:
         inside = str((sandbox / "data" / "notes.txt").resolve())
