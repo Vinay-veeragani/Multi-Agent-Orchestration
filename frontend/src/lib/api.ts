@@ -12,6 +12,37 @@ export interface AgentSummary {
   description: string;
 }
 
+export interface AgentCapability {
+  name: string;
+  description: string;
+  keywords: string[];
+  proficiency: number;
+}
+
+export interface ToolPermission {
+  tool: string;
+  effect: string;
+  constraints: Record<string, unknown>;
+  max_calls: number | null;
+  reason: string | null;
+}
+
+export interface AgentDetail {
+  id: string;
+  name: string;
+  description: string;
+  kind: string;
+  capabilities: AgentCapability[];
+  allowed_tools: ToolPermission[];
+  system_prompt: string;
+  model_key: string | null;
+  timeout_seconds: number;
+  max_iterations: number;
+  confidence_floor: number;
+  enabled: boolean;
+  tags: string[];
+}
+
 export interface WorkflowSummary {
   id: string;
   name: string;
@@ -131,8 +162,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function listAgents(): Promise<AgentSummary[]> {
-  return request<AgentSummary[]>("/agents");
+export function listAgents(): Promise<AgentDetail[]> {
+  // The backend always returns the full AgentDefinition here; AgentDetail is
+  // the richer type most callers of this same response actually want.
+  return request<AgentDetail[]>("/agents");
+}
+
+export function getAgent(agentId: string): Promise<AgentDetail> {
+  return request<AgentDetail>(`/agents/${encodeURIComponent(agentId)}`);
 }
 
 export function listWorkflows(): Promise<WorkflowSummary[]> {

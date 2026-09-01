@@ -297,6 +297,18 @@ stores results unredacted elsewhere in this system, and not returned by
 either route (`GET /tool-invocations` deliberately omits `result`), so it
 does not change the API's actual exposure surface.
 
+Also built: `/agents` and `/agents/[id]` -- a real coverage gap closed, not
+polish. Agents are central to this engine (every workflow node and the
+supervisor reference one), but had zero UI visibility beyond a bare count
+on the dashboard; `GET /agents`/`GET /agents/{id}` already returned
+everything needed (capabilities, the deny-by-default tool allowlist, the
+system prompt) with no backend change required. Cross-linked from the
+execution detail page's agent-invocations panel. Verified against the
+real running API: both pages render real data (capabilities, tool
+permissions with `max_calls`, the system prompt), a genuine 404 for an
+unknown agent id, and the cross-links from a real execution's invocation
+panel resolve to the right agent pages.
+
 Also built: a frontend polish pass -- per-page `<title>`, active-route nav
 highlighting, a custom `not-found.tsx`, a custom `error.tsx`, and
 `loading.tsx` skeletons on the list/detail routes. Surfaced a real,

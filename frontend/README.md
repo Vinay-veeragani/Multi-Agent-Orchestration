@@ -10,6 +10,8 @@ goes through the same API the CLI uses (see [`../docs/interfaces.md`](../docs/in
 | Route | Shows |
 |---|---|
 | `/` | Recent executions -- status, cost, created time |
+| `/agents` | The registry every workflow node and the supervisor reference |
+| `/agents/[id]` | Capabilities, allowed tools (deny-by-default allowlist), system prompt |
 | `/executions/new` | Start an execution (task, optional success criteria, optional workflow) |
 | `/executions/[id]` | Nodes, budget usage, agent/tool invocations, a Cancel button while in flight, and either a live SSE event stream (in-flight) or a play/step/scrub replay (finished) |
 | `/benchmarks` | Recent `orchestrator benchmark` reports |

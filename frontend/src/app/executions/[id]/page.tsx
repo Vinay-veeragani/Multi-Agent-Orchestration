@@ -136,7 +136,11 @@ export default async function ExecutionDetailPage({
                 <tbody className="divide-y divide-black/5 dark:divide-white/10">
                   {agentInvocations.map((inv) => (
                     <tr key={inv.id}>
-                      <td className="px-3 py-2 font-mono">{inv.agent_id}</td>
+                      <td className="px-3 py-2 font-mono">
+                        <Link href={`/agents/${inv.agent_id}`} className="hover:underline">
+                          {inv.agent_id}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2">{inv.status}</td>
                       <td className="px-3 py-2 text-right text-neutral-500">
                         {inv.tokens} tok &middot; ${inv.cost_usd.toFixed(4)}
