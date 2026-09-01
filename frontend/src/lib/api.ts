@@ -140,11 +140,11 @@ export function listExecutions(params?: {
 }
 
 export function getExecution(executionId: string): Promise<ExecutionState> {
-  return request<ExecutionState>(`/executions/${executionId}`);
+  return request<ExecutionState>(`/executions/${encodeURIComponent(executionId)}`);
 }
 
 export function getExecutionEvents(executionId: string): Promise<ExecutionEvent[]> {
-  return request<ExecutionEvent[]>(`/executions/${executionId}/events`);
+  return request<ExecutionEvent[]>(`/executions/${encodeURIComponent(executionId)}/events`);
 }
 
 export interface CreateExecutionInput {
@@ -167,7 +167,7 @@ export function createExecution(
 }
 
 export function cancelExecution(executionId: string): Promise<unknown> {
-  return request(`/executions/${executionId}/cancel`, { method: "POST" });
+  return request(`/executions/${encodeURIComponent(executionId)}/cancel`, { method: "POST" });
 }
 
 export interface ApprovalRequest {
@@ -186,7 +186,7 @@ export interface ApprovalRequest {
 }
 
 export function listPendingApprovals(executionId: string): Promise<ApprovalRequest[]> {
-  return request<ApprovalRequest[]>(`/executions/${executionId}/approvals`);
+  return request<ApprovalRequest[]>(`/executions/${encodeURIComponent(executionId)}/approvals`);
 }
 
 export interface AgentInvocation {
@@ -215,11 +215,15 @@ export interface ToolInvocation {
 }
 
 export function listAgentInvocations(executionId: string): Promise<AgentInvocation[]> {
-  return request<AgentInvocation[]>(`/executions/${executionId}/agent-invocations`);
+  return request<AgentInvocation[]>(
+    `/executions/${encodeURIComponent(executionId)}/agent-invocations`,
+  );
 }
 
 export function listToolInvocations(executionId: string): Promise<ToolInvocation[]> {
-  return request<ToolInvocation[]>(`/executions/${executionId}/tool-invocations`);
+  return request<ToolInvocation[]>(
+    `/executions/${encodeURIComponent(executionId)}/tool-invocations`,
+  );
 }
 
 export function decideApproval(
@@ -227,10 +231,13 @@ export function decideApproval(
   decision: "approve" | "reject",
   input: { approvalId?: string; by: string; note?: string },
 ): Promise<ApprovalRequest> {
-  return request<ApprovalRequest>(`/executions/${executionId}/${decision}`, {
-    method: "POST",
-    body: JSON.stringify({ approval_id: input.approvalId, by: input.by, note: input.note }),
-  });
+  return request<ApprovalRequest>(
+    `/executions/${encodeURIComponent(executionId)}/${decision}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ approval_id: input.approvalId, by: input.by, note: input.note }),
+    },
+  );
 }
 
 export interface BenchmarkRunSummary {
@@ -287,7 +294,7 @@ export function listBenchmarkRuns(limit = 20): Promise<BenchmarkRunSummary[]> {
 }
 
 export function getBenchmarkRun(reportId: string): Promise<BenchmarkReport> {
-  return request<BenchmarkReport>(`/benchmarks/${reportId}`);
+  return request<BenchmarkReport>(`/benchmarks/${encodeURIComponent(reportId)}`);
 }
 
 export { config as orchestratorConfig, ApiError };

@@ -13,7 +13,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/stream/[id]"
   const { baseUrl, apiKey } = orchestratorConfig();
   const afterId = new URL(request.url).searchParams.get("after_id");
 
-  const upstreamUrl = new URL(`${baseUrl}/executions/${id}/stream`);
+  const upstreamUrl = new URL(`${baseUrl}/executions/${encodeURIComponent(id)}/stream`);
   if (afterId) upstreamUrl.searchParams.set("after_id", afterId);
 
   const upstream = await fetch(upstreamUrl, {

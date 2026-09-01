@@ -262,6 +262,27 @@ clean, `npx eslint .` is clean, and a real execution created via `curl`
 rendered correctly on both the dashboard and detail page, with the SSE
 proxy streaming real, correctly-ordered events end to end.
 
+Also: a scoped security pass over this session's own new frontend surface
+(no diff was reviewable against `origin/HEAD` since everything was already
+pushed, so this was a manual review, not the `security-review` skill).
+Found and fixed one real issue: every `src/lib/api.ts` function and the
+SSE proxy route (`api/stream/[id]/route.ts`) interpolated a route param
+(`executionId`, `reportId`) directly into a URL template before parsing --
+an id containing `?`/`#` could inject extra query parameters or a
+fragment into the upstream request. Fixed by wrapping every such id in
+`encodeURIComponent()`. Reviewed and found already sound: every new route
+sits behind `require_api_key` (checked directly, not assumed); tool
+arguments are redacted before `InvocationRecorder.record_tool` persists
+them (same `_redact()` used for approval parameters); and the HITL
+Server Action's bound `executionId`/`approvalId`/`decision` arguments are
+protected by Next.js's own closure encryption, not by anything this app
+added. One accepted, pre-existing-pattern gap, not fixed: a tool call's
+*result* (as opposed to its arguments) is stored in `tool_invocations`
+unredacted -- consistent with how `execution_states.tool_outputs` already
+stores results unredacted elsewhere in this system, and not returned by
+either route (`GET /tool-invocations` deliberately omits `result`), so it
+does not change the API's actual exposure surface.
+
 Also built: execution replay on the detail page (`replay.tsx`) -- a
 play/pause/step/scrub control over a terminal execution's already-fetched
 event list. Needed no new backend data: node status at any point in the
