@@ -108,6 +108,12 @@ about it; `GET /health`'s `demo_mode` field is what drives it.
   tokens, duration, agent steps, tool calls, and retries, and full
   observability (structured logs with secret redaction, OpenTelemetry traces,
   Prometheus metrics).
+- **Provider-agnostic, including local/offline models.** OpenAI, Anthropic,
+  and Gemini adapters are real (not stubs), and so is Ollama support
+  (`ORCH_OLLAMA_ENABLED=true`) via the same OpenAI-compatible adapter, for
+  running entirely without a cloud API key -- see
+  [`docs/getting-started.md`](docs/getting-started.md) for setup and the
+  caveat below on what's actually been verified against a real model.
 - **An HTTP API, a CLI, a benchmark, and a web UI** over all of the above --
   see [Documentation](#documentation) and [Web UI](#web-ui).
 
@@ -147,7 +153,11 @@ of exactly those were found and fixed this way.
   budgets, checkpointing, approvals) are real and fully exercised; model
   *judgement* is not, because no API key has been configured for this
   project. Benchmark latency figures are engine wall-clock, explicitly
-  labelled as such, never real provider latency.
+  labelled as such, never real provider latency. The same is true of Ollama:
+  the adapter is verified with a real HTTP request/response cycle against a
+  fake server shaped exactly like Ollama's documented API (URL, no-auth
+  headers, payload, response parsing all real), but not yet run against an
+  actually-installed Ollama on real hardware.
 - **Not a sandboxed code execution platform.** `python_exec` and (disabled by
   default) `exec_shell` run with the same filesystem and network access as
   the engine process. The isolation is process-level (subprocess, timeout,
