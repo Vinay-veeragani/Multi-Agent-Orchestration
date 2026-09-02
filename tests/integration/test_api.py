@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 import pytest
 from fastapi import FastAPI
+from pydantic import SecretStr
 
 from orchestration.api.app import create_app
 from orchestration.config import Settings
@@ -102,7 +103,25 @@ class TestHealthAndMetrics:
             response = await client.get("/health")
         assert response.status_code == 200
         body = response.json()
-        assert body == {"status": "ok", "database": True, "redis": True}
+        assert body == {"status": "ok", "database": True, "redis": True, "demo_mode": True}
+
+    async def test_demo_mode_is_false_once_a_real_provider_key_is_configured(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        settings = Settings(openai_api_key=SecretStr("sk-not-a-real-key"))
+        app = create_app(
+            settings,
+            llm=LLMClient.mock(MockProvider(), sleep=_no_sleep),
+            database=database,
+            redis=redis_coordinator,
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(transport=transport, base_url="http://test") as client,
+        ):
+            response = await client.get("/health")
+        assert response.json()["demo_mode"] is False
 
     async def test_metrics_is_prometheus_text(
         self, database: Database, redis_coordinator: RedisCoordinator

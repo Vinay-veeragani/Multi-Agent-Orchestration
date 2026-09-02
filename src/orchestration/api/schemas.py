@@ -79,3 +79,9 @@ class HealthResponse(BaseModel):
     status: str
     database: bool
     redis: bool
+    #: True when no real LLM provider is configured, so every routing
+    #: decision comes from MockProvider + the deterministic heuristic
+    #: fallback rather than a real model. Not a degraded state -- the
+    #: engine is fully functional this way -- just worth surfacing so a
+    #: caller doesn't mistake it for a broken credential.
+    demo_mode: bool

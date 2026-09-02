@@ -162,6 +162,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+export interface Health {
+  status: string;
+  database: boolean;
+  redis: boolean;
+  demo_mode: boolean;
+}
+
+export function getHealth(): Promise<Health> {
+  return request<Health>("/health");
+}
+
 export function listAgents(): Promise<AgentDetail[]> {
   // The backend always returns the full AgentDefinition here; AgentDetail is
   // the richer type most callers of this same response actually want.

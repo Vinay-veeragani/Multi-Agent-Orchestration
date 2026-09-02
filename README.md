@@ -58,7 +58,9 @@ orchestrator benchmark --category simple --test-db
 Three narrated, runnable demos live under [`examples/`](examples/):
 competitive intelligence (parallel research fan-out), data analysis (a real
 tool call mid-run), and human approval (a durable pause across a simulated
-process restart).
+process restart). `python scripts/seed_demo_data.py` runs all three plus a
+benchmark slice in one go, so a freshly migrated database has something to
+look at in [the web UI](#web-ui) instead of empty lists.
 
 ## Web UI
 
@@ -80,6 +82,10 @@ npm run dev
 Requires the API from the Quickstart above to already be running. See
 [`frontend/`](frontend/) for details; there is no separate write path here --
 every mutation goes through the same HTTP API the CLI uses.
+
+When no real LLM provider is configured (the default -- see "What this is
+NOT" above), the UI shows a **demo mode** banner rather than staying silent
+about it; `GET /health`'s `demo_mode` field is what drives it.
 
 ## What this is
 

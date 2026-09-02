@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Response
 from orchestration.api.schemas import HealthResponse
 from orchestration.api.security import get_app_state
 from orchestration.api.state import AppState
+from orchestration.llm.factory import configured_providers
 from orchestration.observability.metrics import metrics_endpoint
 
 router = APIRouter(tags=["system"])
@@ -23,10 +24,12 @@ router = APIRouter(tags=["system"])
 async def health(app_state: AppState = Depends(get_app_state)) -> HealthResponse:
     database_ok = await app_state.database.ping()
     redis_ok = await app_state.redis.ping()
+    demo_mode = tuple(configured_providers(app_state.settings)) == ("mock",)
     return HealthResponse(
         status="ok" if (database_ok and redis_ok) else "degraded",
         database=database_ok,
         redis=redis_ok,
+        demo_mode=demo_mode,
     )
 
 

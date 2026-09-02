@@ -39,7 +39,7 @@ prints.
 | `GET /executions/{execution_id}/trace` | An event-derived trace view (not a live OTel query -- see the endpoint's own docstring) |
 | `GET /benchmarks` | Recent evaluation reports (`orchestrator benchmark` already persists these) |
 | `GET /benchmarks/{report_id}` | One full report -- every arm's metrics and every scenario result |
-| `GET /health` | Database + Redis reachability |
+| `GET /health` | Database + Redis reachability, plus `demo_mode` (true when no real LLM provider is configured) |
 | `GET /metrics` | Prometheus exposition format |
 
 `POST /executions` accepts `task`, optional `workflow_id`, `success_criteria`,

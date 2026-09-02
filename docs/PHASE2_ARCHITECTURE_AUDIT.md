@@ -487,9 +487,26 @@ Concretely, mapped to what's above:
   launching via `create_subprocess_shell` instead of a hand-split argv --
   documented in `mcp.py` as a deliberate trust decision (the command is
   operator-configured deployment settings, not attacker-controlled input).
-- No demo/zero-API-key mode beyond what `MockProvider` already gives the
-  benchmark and example scripts -- extending that pattern to a
-  browsable/demoable API mode is new wiring, not new provider logic.
+- ~~No demo/zero-API-key mode~~ -- closed. The engine already ran with no
+  LLM key (MockProvider + heuristic fallback), just silently; made that an
+  explicit, visible mode instead:
+  - `GET /health` gained `demo_mode: bool` (true when
+    `configured_providers(settings) == ("mock",)`), computed from settings
+    only -- unaffected by an injected/overridden `llm` client, which is
+    what a test asserting `demo_mode: False` with a fake OpenAI key but a
+    mocked `LLMClient` needed to actually prove.
+  - The frontend's root layout fetches `/health` and shows a banner on
+    every page when `demo_mode` is true; a failed health fetch just hides
+    the banner (each page's own `error.tsx` already covers a genuinely
+    unreachable API) rather than taking the whole shell down.
+  - `scripts/seed_demo_data.py`: runs the benchmark slice **before** the
+    three narrated `examples/` demos, not after -- a real ordering bug
+    caught by actually checking the result: the benchmark alone creates
+    60-80 execution rows, and running it last buried the three actual demo
+    executions below the dashboard's default view. Verified by querying
+    the reordered script's actual output: the three narrated demo tasks
+    now sort at the very top of `list_recent`, `benchmark scenario` rows
+    below them.
 
 ## 15. Reusable as-is
 
