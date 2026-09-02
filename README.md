@@ -163,6 +163,15 @@ of exactly those were found and fixed this way.
   the engine process. The isolation is process-level (subprocess, timeout,
   output cap), not a security boundary -- permission scoping per agent is the
   real control.
+- **Not idempotent across a crash-resume of a tool call, yet.** The
+  mechanism for this is real and tested in isolation -- `NodeState.
+  committed_keys`, `InvocationRepository.claim_tool`/`find_completed_tool`
+  (see [`docs/checkpointing-and-resume.md`](docs/checkpointing-and-resume.md))
+  -- but nothing in the live execution path calls it. If an execution
+  checkpoints, crashes, and resumes between a tool call completing and its
+  result being recorded, the resumed attempt calls the tool again. For a
+  non-idempotent tool (`send_email`, `write_file`) that is a real duplicate
+  side effect, not a hypothetical one.
 - **Not multi-region or multi-tenant.** Concurrency limits, coordination
   locks, and the reference deployment are single-cluster. Cross-process
   cancellation propagation (an execution cancelled by one worker while

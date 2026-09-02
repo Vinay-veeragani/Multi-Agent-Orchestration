@@ -60,13 +60,26 @@ checkpoint.
 (the version the caller read); a mismatch raises `ConcurrencyConflictError`
 rather than silently clobbering a write from a worker that got there first.
 
-## Idempotent side effects
+## Idempotent side effects -- designed, not yet wired
 
-A tool invocation's idempotency key is written *before* the tool runs; if a
-resumed attempt finds it already completed, the call is not repeated. This
-is what makes a checkpoint-then-crash between "tool ran" and "result
-recorded" safe to resume, for tools where repeating the side effect would
-matter (an email, a write).
+`InvocationRepository` (`persistence/repositories.py`) has exactly the
+mechanism this needs: `claim_tool()` writes an idempotency key *before* a
+tool runs, `find_completed_tool()` lets a resumed attempt discover it
+already finished and skip repeating the call, and `NodeState.
+committed_keys` exists on the domain model for the same purpose at the
+node level. All three are real, tested in isolation
+(`tests/integration/test_persistence.py`), and unused by anything else.
+
+**Nothing in the live execution path calls them.** `AgentRuntime`'s actual
+tool-calling code (`agents/runtime.py`) does not claim a key before a tool
+runs or consult one on resume. Concretely: if an execution checkpoints,
+crashes, and resumes between "tool ran" and "result recorded," a resumed
+attempt **will call the tool again** -- for a non-idempotent tool (an
+email, a write, `send_email`, `write_file`), that is a real duplicate side
+effect, not a hypothetical one. See the root README's "What this project
+is NOT" for the same statement in one place a reader is more likely to
+find it, and `docs/PHASE2_ARCHITECTURE_AUDIT.md` §7 for how this was
+found (a later release-readiness audit, not the original design review).
 
 ## See also
 

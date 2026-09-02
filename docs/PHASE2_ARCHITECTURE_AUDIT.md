@@ -191,6 +191,16 @@ PostgreSQL JSONB safe. `CheckpointReason` includes `ROUND_COMPLETED`
 (added to support the dynamic path's per-turn checkpointing -- see
 `dynamic-orchestration.md`).
 
+**Update, from a later release-readiness audit**: the idempotency
+mechanism this state model implies -- `NodeState.committed_keys`, plus
+`InvocationRepository.claim_tool`/`find_completed_tool` -- is real and
+tested in isolation, but nothing in the live execution path
+(`AgentRuntime`) actually calls it. A resumed execution can call a
+non-idempotent tool a second time. Documented plainly (not fixed, by
+deliberate choice, to avoid touching the tool-calling path without a
+proper design pass) in `docs/checkpointing-and-resume.md`'s "Idempotent
+side effects" section and the root README's "What this project is NOT."
+
 ## 8. Current provider abstraction
 
 `llm/base.py` defines the provider protocol; `llm/factory.py` builds a
