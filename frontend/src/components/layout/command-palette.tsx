@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Command } from "cmdk";
-import { Activity, Bot, FileSearch, Gauge, Key, Plus, Search } from "lucide-react";
+import { Activity, Bot, FileSearch, Gauge, Key, Plus, Search, ShieldQuestion } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { SearchResult } from "@/app/api/search/route";
@@ -16,6 +16,7 @@ interface Action {
 
 const ACTIONS: Action[] = [
   { label: "Overview", href: "/", icon: Gauge, group: "Navigate" },
+  { label: "Approvals", href: "/approvals", icon: ShieldQuestion, group: "Navigate" },
   { label: "Agents", href: "/agents", icon: Bot, group: "Navigate" },
   { label: "Benchmarks / Evaluations", href: "/benchmarks", icon: FileSearch, group: "Navigate" },
   { label: "Providers", href: "/providers", icon: Key, group: "Navigate" },

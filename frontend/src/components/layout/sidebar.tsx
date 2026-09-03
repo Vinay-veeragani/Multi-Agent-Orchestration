@@ -9,7 +9,7 @@ import {
   Library,
   Server,
   Settings,
-  Shield,
+  ShieldQuestion,
   Wrench,
 } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +37,7 @@ const SECTIONS: NavSection[] = [
     label: "Workspace",
     items: [
       { label: "Executions", href: "/", icon: Gauge },
+      { label: "Approvals", href: "/approvals", icon: ShieldQuestion },
       { label: "Agents", href: "/agents", icon: Bot },
       { label: "Tools", icon: Wrench },
       { label: "Knowledge", icon: Library },
@@ -46,7 +47,6 @@ const SECTIONS: NavSection[] = [
     label: "Operations",
     items: [
       { label: "Providers", href: "/providers", icon: Key },
-      { label: "Policies", icon: Shield },
       { label: "Observability", icon: Server },
     ],
   },

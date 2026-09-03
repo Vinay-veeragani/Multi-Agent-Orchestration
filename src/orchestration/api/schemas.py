@@ -11,9 +11,12 @@ from __future__ import annotations
 
 from typing import Literal
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from orchestration.domain.base import JsonDict
+from orchestration.domain.enums import RiskLevel
 
 
 class CreateExecutionRequest(BaseModel):
@@ -141,6 +144,28 @@ class UpdateProviderRequest(BaseModel):
     clear_api_key: bool = False
     base_url: str | None = Field(default=None, max_length=512)
     selected_model_key: str | None = None
+
+
+class PendingApprovalItem(BaseModel):
+    """One row in the HITL inbox (``GET /approvals``) -- across every execution.
+
+    A superset of :class:`~orchestration.domain.approval.ApprovalRequest`:
+    adds ``task_description`` so a reviewer scanning the whole queue knows
+    what each request is even for without opening the execution first.
+    """
+
+    id: str
+    execution_id: str
+    task_description: str
+    node_id: str | None = None
+    action: str
+    agent_id: str | None = None
+    tool: str | None = None
+    parameters: JsonDict
+    risk_level: RiskLevel
+    risk_reason: str
+    requested_at: datetime
+    expires_at: datetime | None = None
 
 
 class HealthResponse(BaseModel):

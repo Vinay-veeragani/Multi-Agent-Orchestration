@@ -542,6 +542,102 @@ class TestApprovalFlow:
         assert finished["status"] == ExecutionStatus.FAILED.value
 
 
+class TestApprovalInbox:
+    """`GET /approvals` -- every pending approval across every execution.
+
+    Distinct from `GET /executions/{id}/approvals`, already covered by
+    TestApprovalFlow: this is the deployment-wide HITL queue.
+    """
+
+    @staticmethod
+    def _approval_provider(reason: str) -> MockProvider:
+        return MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(
+                        routing_decision(
+                            "request_human_approval",
+                            approval_action="publish the report externally",
+                            approval_risk_reason=reason,
+                        ),
+                        routing_decision("finalize", answer="published"),
+                    ),
+                    priority=10,
+                )
+            ]
+        )
+
+    async def test_lists_pending_approvals_from_more_than_one_execution(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        # Separate `_client`/provider per execution: a single MockProvider's
+        # response cycling is shared across whatever calls it within one
+        # client, so two concurrently-running executions racing for the next
+        # scripted response would non-deterministically starve one of its
+        # approval step. The DB (and therefore `/approvals`) is the same
+        # `database` fixture underneath regardless of which client wrote to it.
+        async with _client(database, redis_coordinator, self._approval_provider("visible to customers")) as client:
+            first = await client.post("/executions", json={"task": "publish report A"})
+            await _wait_for_terminal(client, first.json()["execution_id"])
+
+        async with _client(database, redis_coordinator, self._approval_provider("visible to customers")) as client:
+            second = await client.post("/executions", json={"task": "publish report B"})
+            await _wait_for_terminal(client, second.json()["execution_id"])
+            inbox = await client.get("/approvals")
+
+        assert inbox.status_code == 200
+        items = inbox.json()
+        assert len(items) == 2
+        tasks = {item["task_description"] for item in items}
+        assert tasks == {"publish report A", "publish report B"}
+        assert all(item["risk_reason"] == "visible to customers" for item in items)
+
+    async def test_a_decided_approval_drops_out_of_the_inbox(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(
+                        routing_decision(
+                            "request_human_approval",
+                            approval_action="publish the report externally",
+                            approval_risk_reason="visible to customers",
+                        ),
+                        routing_decision("finalize", answer="published"),
+                    ),
+                    priority=10,
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post("/executions", json={"task": "publish a report"})
+            execution_id = created.json()["execution_id"]
+            await _wait_for_terminal(client, execution_id)
+
+            before = await client.get("/approvals")
+            assert len(before.json()) == 1
+
+            await client.post(
+                f"/executions/{execution_id}/approve", json={"by": "reviewer@example.test"}
+            )
+            after = await client.get("/approvals")
+
+        assert after.json() == []
+
+    async def test_the_inbox_is_empty_with_nothing_pending(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get("/approvals")
+        assert response.status_code == 200
+        assert response.json() == []
+
+
 class TestResume:
     async def test_resuming_a_stranded_execution_picks_up_a_decision_made_out_of_band(
         self, database: Database, redis_coordinator: RedisCoordinator

@@ -293,6 +293,27 @@ export function listPendingApprovals(executionId: string): Promise<ApprovalReque
   return request<ApprovalRequest[]>(`/executions/${encodeURIComponent(executionId)}/approvals`);
 }
 
+export interface PendingApprovalItem {
+  id: string;
+  execution_id: string;
+  task_description: string;
+  node_id: string | null;
+  action: string;
+  agent_id: string | null;
+  tool: string | null;
+  parameters: Record<string, unknown>;
+  risk_level: string;
+  risk_reason: string;
+  requested_at: string;
+  expires_at: string | null;
+}
+
+// The HITL inbox: every pending approval across every execution, not just
+// one -- see docs on /approvals vs /executions/{id}/approvals.
+export function listAllPendingApprovals(): Promise<PendingApprovalItem[]> {
+  return request<PendingApprovalItem[]>("/approvals");
+}
+
 export interface AgentInvocation {
   id: string;
   node_id: string | null;

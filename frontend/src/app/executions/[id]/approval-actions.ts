@@ -40,5 +40,6 @@ export async function decideApprovalAction(
   }
 
   revalidatePath(`/executions/${executionId}`);
+  revalidatePath("/approvals");
   return { status: "idle" };
 }

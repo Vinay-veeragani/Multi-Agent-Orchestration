@@ -1033,6 +1033,25 @@ class ApprovalRepository:
         )
         return [self._to_domain(r) for r in rows]
 
+    async def list_all_pending(self, *, limit: int = 100) -> list[tuple[ApprovalRequest, str]]:
+        """Every pending approval across every execution, oldest first.
+
+        Paired with the execution's own task description -- the HITL inbox
+        page needs that for context (which run is this even for?) without a
+        second round trip per row, since a reviewer scanning the whole queue
+        is exactly the case an N+1 query would hurt most.
+        """
+        rows = (
+            await self._session.execute(
+                select(ApprovalRow, ExecutionRow.task_description)
+                .join(ExecutionRow, ExecutionRow.id == ApprovalRow.execution_id)
+                .where(ApprovalRow.status == ApprovalStatus.PENDING.value)
+                .order_by(ApprovalRow.requested_at.asc())
+                .limit(limit)
+            )
+        ).all()
+        return [(self._to_domain(row), task_description) for row, task_description in rows]
+
     async def expire_overdue(self) -> int:
         """Mark expired pending approvals, returning how many were changed."""
         result = await self._session.execute(
