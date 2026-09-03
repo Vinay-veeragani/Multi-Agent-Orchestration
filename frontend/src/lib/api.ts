@@ -49,6 +49,35 @@ export interface WorkflowSummary {
   dynamic: boolean;
 }
 
+export interface WorkflowNodeDetail {
+  id: string;
+  kind: string;
+  name: string;
+  agent_id: string | null;
+  tool: string | null;
+}
+
+export interface WorkflowEdgeDetail {
+  id: string;
+  source: string;
+  target: string;
+  label: string;
+}
+
+export interface WorkflowDetail extends WorkflowSummary {
+  nodes: WorkflowNodeDetail[];
+  edges: WorkflowEdgeDetail[];
+}
+
+// A dynamic execution's supervisor grows its graph turn by turn; that growth
+// is never written back to the `workflows` table (see
+// docs/PHASE2_ARCHITECTURE_AUDIT.md), so `GET /workflows/{id}` would show only
+// the single-node seed for a dynamic execution. This reads the execution's own
+// checkpointed graph instead, which reflects what it actually ran.
+export function getExecutionWorkflow(executionId: string): Promise<WorkflowDetail> {
+  return request<WorkflowDetail>(`/executions/${encodeURIComponent(executionId)}/workflow`);
+}
+
 export interface ExecutionSummary {
   id: string;
   workflow_id: string;
@@ -95,10 +124,13 @@ export interface ExecutionState {
   status: string;
   current_nodes: string[];
   node_states: Record<string, NodeState>;
+  agent_outputs: Record<string, Record<string, unknown>>;
   final_output: string | null;
   pending_approval_id: string | null;
   budget: Budget;
   budget_usage: BudgetUsage;
+  started_at: string | null;
+  completed_at: string | null;
 }
 
 export interface ExecutionEvent {
@@ -183,39 +215,6 @@ export function getAgent(agentId: string): Promise<AgentDetail> {
   return request<AgentDetail>(`/agents/${encodeURIComponent(agentId)}`);
 }
 
-export function listWorkflows(): Promise<WorkflowSummary[]> {
-  return request<WorkflowSummary[]>("/workflows");
-}
-
-// Limited-scope on purpose: agent, join, and terminal nodes only (no tool
-// nodes, conditions, or approval nodes) -- covers the fan-out/join shape
-// every demo and test in this repo already uses, without a graph editor.
-export interface WorkflowNodeInput {
-  id: string;
-  kind: "agent" | "join" | "terminal";
-  agent_id?: string;
-  join_policy?: "all" | "any" | "quorum";
-}
-
-export interface WorkflowEdgeInput {
-  source: string;
-  target: string;
-}
-
-export interface CreateWorkflowInput {
-  name: string;
-  description?: string;
-  nodes: WorkflowNodeInput[];
-  edges: WorkflowEdgeInput[];
-}
-
-export function createWorkflow(input: CreateWorkflowInput): Promise<WorkflowSummary> {
-  return request<WorkflowSummary>("/workflows", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
 export function listExecutions(params?: {
   limit?: number;
   statusFilter?: string;
@@ -240,7 +239,6 @@ export interface CreateExecutionInput {
   // The API's success_criteria is a tuple[str, ...] -- an array, not a
   // single string.
   successCriteria?: string[];
-  workflowId?: string;
 }
 
 export function createExecution(
@@ -251,7 +249,6 @@ export function createExecution(
     body: JSON.stringify({
       task: input.task,
       success_criteria: input.successCriteria ?? [],
-      workflow_id: input.workflowId || undefined,
     }),
   });
 }

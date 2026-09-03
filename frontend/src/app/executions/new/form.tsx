@@ -1,18 +1,18 @@
 "use client";
 
 import { useActionState } from "react";
-import type { WorkflowSummary } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { createExecutionAction, type NewExecutionState } from "./actions";
 
 const initialState: NewExecutionState = { status: "idle" };
 
-export function NewExecutionForm({ workflows }: { workflows: WorkflowSummary[] }) {
+export function NewExecutionForm() {
   const [state, formAction, pending] = useActionState(createExecutionAction, initialState);
 
   return (
     <form action={formAction} className="space-y-4">
       <div>
-        <label htmlFor="task" className="text-xs font-medium text-neutral-500">
+        <label htmlFor="task" className="text-xs font-medium text-subtle-foreground">
           Task
         </label>
         <textarea
@@ -21,52 +21,27 @@ export function NewExecutionForm({ workflows }: { workflows: WorkflowSummary[] }
           required
           rows={3}
           placeholder="e.g. compare CRM vendors on pricing"
-          className="mt-1 block w-full rounded border border-black/10 bg-transparent px-2 py-1.5 text-sm dark:border-white/15"
+          className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
         />
       </div>
 
       <div>
-        <label htmlFor="success_criteria" className="text-xs font-medium text-neutral-500">
-          Success criteria <span className="text-neutral-400">(optional, one per line)</span>
+        <label htmlFor="success_criteria" className="text-xs font-medium text-subtle-foreground">
+          Success criteria <span className="text-subtle-foreground/70">(optional, one per line)</span>
         </label>
         <textarea
           id="success_criteria"
           name="success_criteria"
           rows={2}
-          className="mt-1 block w-full rounded border border-black/10 bg-transparent px-2 py-1.5 text-sm dark:border-white/15"
+          className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
         />
       </div>
 
-      <div>
-        <label htmlFor="workflow_id" className="text-xs font-medium text-neutral-500">
-          Workflow <span className="text-neutral-400">(optional -- omit for a dynamic, supervisor-driven run)</span>
-        </label>
-        <select
-          id="workflow_id"
-          name="workflow_id"
-          defaultValue=""
-          className="mt-1 block w-full rounded border border-black/10 bg-transparent px-2 py-1.5 text-sm dark:border-white/15"
-        >
-          <option value="">Dynamic (no workflow)</option>
-          {workflows.map((workflow) => (
-            <option key={workflow.id} value={workflow.id}>
-              {workflow.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {state.status === "error" && <p className="text-sm text-danger">{state.message}</p>}
 
-      {state.status === "error" && (
-        <p className="text-sm text-red-700 dark:text-red-400">{state.message}</p>
-      )}
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-      >
+      <Button type="submit" variant="primary" disabled={pending}>
         {pending ? "Starting…" : "Start execution"}
-      </button>
+      </Button>
     </form>
   );
 }

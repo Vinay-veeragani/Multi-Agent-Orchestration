@@ -27,7 +27,7 @@ from orchestration.domain.budget import Budget
 from orchestration.domain.enums import EventType, ExecutionStatus
 from orchestration.domain.events import EventFilter, ExecutionEvent
 from orchestration.domain.execution import ExecutionState
-from orchestration.domain.workflow import Task
+from orchestration.domain.workflow import Task, Workflow
 from orchestration.errors import InputValidationError, NotFoundError
 from orchestration.persistence.repositories import (
     EventRepository,
@@ -168,6 +168,24 @@ async def get_execution(
     execution_id: str, app_state: AppState = Depends(get_app_state)
 ) -> ExecutionState:
     return await _load_state(execution_id, app_state)
+
+
+@router.get("/{execution_id}/workflow", response_model=Workflow)
+async def get_execution_workflow(
+    execution_id: str, app_state: AppState = Depends(get_app_state)
+) -> Workflow:
+    """The graph as this execution actually ran it, not as first registered.
+
+    A dynamic execution's supervisor grows its workflow turn by turn via
+    ``Workflow.extended_with`` (see ``orchestration.runtime.orchestrator``);
+    that growth is never written back to the `workflows` table, only into the
+    execution's own checkpointed state. ``GET /workflows/{id}`` would therefore
+    return just the single-node seed for any dynamic execution -- this route
+    reads the same state row `_load_state` does, so a live or finished
+    execution's graph view always reflects its real topology.
+    """
+    _state, workflow = await app_state.checkpoint_manager.load_state(execution_id)
+    return workflow
 
 
 @router.post("/{execution_id}/cancel", status_code=status.HTTP_202_ACCEPTED)

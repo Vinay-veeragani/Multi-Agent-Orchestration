@@ -277,6 +277,48 @@ class TestDynamicExecutions:
         assert trace.status_code == 200
         assert trace.json()["execution_id"] == execution_id
 
+    async def test_the_execution_workflow_route_reflects_the_grown_graph(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        """`GET /executions/{id}/workflow`, not `GET /workflows/{id}`.
+
+        A dynamic execution's seed workflow is a single terminal node; the
+        supervisor's delegation grows the real graph turn by turn without ever
+        writing that growth back to the `workflows` table. Only the execution-
+        scoped route should show the delegated agent node.
+        """
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="supervisor",
+                    match_system="supervisor",
+                    responses=(
+                        routing_decision("delegate", agents=["research_agent"]),
+                        routing_decision("finalize", answer="five vendors found"),
+                    ),
+                    priority=10,
+                ),
+                MockRule(name="agent", responses=(agent_output("five vendors found"),)),
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post(
+                "/executions", json={"task": "compare CRM vendors on pricing"}
+            )
+            execution_id = created.json()["execution_id"]
+            workflow_id = created.json()["workflow_id"]
+
+            await _wait_for_terminal(client, execution_id)
+            seed = await client.get(f"/workflows/{workflow_id}")
+            grown = await client.get(f"/executions/{execution_id}/workflow")
+
+        assert seed.status_code == 200
+        assert grown.status_code == 200
+        seed_agent_nodes = [n for n in seed.json()["nodes"] if n["kind"] == "agent"]
+        grown_agent_nodes = [n for n in grown.json()["nodes"] if n["kind"] == "agent"]
+        assert seed_agent_nodes == []
+        assert any(n["agent_id"] == "research_agent" for n in grown_agent_nodes)
+
     async def test_a_retried_idempotency_key_returns_the_same_execution(
         self, database: Database, redis_coordinator: RedisCoordinator
     ) -> None:

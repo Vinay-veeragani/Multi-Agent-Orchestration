@@ -20,11 +20,9 @@ export async function createExecutionAction(
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const workflowId = String(formData.get("workflow_id") ?? "").trim() || undefined;
-
   let created;
   try {
-    created = await createExecution({ task, successCriteria, workflowId });
+    created = await createExecution({ task, successCriteria });
   } catch (error) {
     return {
       status: "error",

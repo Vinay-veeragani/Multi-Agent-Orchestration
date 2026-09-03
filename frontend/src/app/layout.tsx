@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, JetBrains_Mono } from "next/font/google";
+import { AppShell } from "@/components/layout/app-shell";
+import { Providers } from "@/components/providers";
 import { getHealth } from "@/lib/api";
-import { DemoModeBanner } from "./demo-mode-banner";
-import { NavLinks } from "./nav-links";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -11,8 +10,8 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
 });
 
@@ -25,27 +24,21 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  // Best-effort: if the API is unreachable, every page's own error.tsx
-  // already handles that -- the layout just skips the banner rather than
-  // taking the whole shell down over a health check.
+  // Best-effort: if the API is unreachable, the top bar just shows
+  // "unreachable" rather than taking the whole shell down over a health
+  // check -- each page's own error.tsx still covers a genuinely broken
+  // data fetch for that page.
   const health = await getHealth().catch(() => null);
 
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        {health?.demo_mode && <DemoModeBanner />}
-        <header className="border-b border-black/10 dark:border-white/15">
-          <div className="mx-auto flex max-w-4xl items-center gap-6 px-6 py-3">
-            <Link href="/" className="font-medium">
-              Agent Orchestration Engine
-            </Link>
-            <NavLinks />
-          </div>
-        </header>
-        <main className="flex-1">{children}</main>
+      <body className="h-full bg-background text-foreground">
+        <Providers>
+          <AppShell health={health}>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );

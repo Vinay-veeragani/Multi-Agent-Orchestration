@@ -3,15 +3,15 @@ import Link from "next/link";
 export default function NotFound() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-20 text-center">
-      <p className="text-sm font-medium text-neutral-500">404</p>
-      <h1 className="mt-2 text-xl font-medium">Not found</h1>
-      <p className="mt-2 text-sm text-neutral-500">
+      <p className="text-sm font-medium text-subtle-foreground">404</p>
+      <h1 className="mt-2 text-xl font-medium text-foreground">Not found</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         There&apos;s nothing at this address -- it may have been a typo, or the
-        execution/workflow/benchmark id doesn&apos;t exist.
+        execution/agent/benchmark id doesn&apos;t exist.
       </p>
       <Link
         href="/"
-        className="mt-6 inline-block rounded bg-black/5 px-3 py-1.5 text-sm font-medium hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/15"
+        className="mt-6 inline-block rounded-md bg-white/[0.06] px-3 py-1.5 text-sm font-medium text-foreground hover:bg-white/[0.1]"
       >
         &larr; Back to executions
       </Link>

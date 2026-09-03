@@ -1,27 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import {
   ApiError,
   getExecution,
   getExecutionEvents,
+  getExecutionWorkflow,
   listAgentInvocations,
   listPendingApprovals,
   listToolInvocations,
 } from "@/lib/api";
+import { Badge, statusVariant } from "@/components/ui/badge";
 import { ApprovalPanel } from "./approval-panel";
 import { CancelButton } from "./cancel-button";
-import { LiveEvents } from "./live-events";
-import { Replay } from "./replay";
-
-const STATUS_BADGE: Record<string, string> = {
-  succeeded: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400",
-  failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400",
-  cancelled: "bg-neutral-200 text-neutral-700 dark:bg-neutral-500/20 dark:text-neutral-300",
-  running: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-400",
-  pending: "bg-neutral-200 text-neutral-700 dark:bg-neutral-500/20 dark:text-neutral-300",
-  waiting_for_approval: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400",
-};
+import { ExecutionWorkspace } from "./execution-workspace";
 
 export async function generateMetadata({
   params,
@@ -46,168 +39,55 @@ export default async function ExecutionDetailPage({
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-  const events = await getExecutionEvents(id).catch(() => []);
   const isTerminal = ["succeeded", "failed", "cancelled"].includes(state.status);
-  const pendingApprovals =
-    state.status === "waiting_for_approval"
-      ? await listPendingApprovals(id).catch(() => [])
-      : [];
-  const [agentInvocations, toolInvocations] = await Promise.all([
+
+  const [events, workflow, agentInvocations, toolInvocations] = await Promise.all([
+    getExecutionEvents(id).catch(() => []),
+    getExecutionWorkflow(id),
     listAgentInvocations(id).catch(() => []),
     listToolInvocations(id).catch(() => []),
   ]);
+  const pendingApprovals =
+    state.status === "waiting_for_approval" ? await listPendingApprovals(id).catch(() => []) : [];
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <Link href="/" className="text-sm text-neutral-500 hover:underline">
-        &larr; Executions
-      </Link>
-
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        <h1 className="font-mono text-lg">{state.execution_id}</h1>
-        <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-            STATUS_BADGE[state.status] ?? "bg-neutral-200 text-neutral-700"
-          }`}
+    <div className="flex h-full flex-col">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-3">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          {state.status}
-        </span>
-        {!isTerminal && <CancelButton executionId={state.execution_id} />}
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Executions
+        </Link>
+        <span className="text-border-strong">/</span>
+        <h1 className="truncate font-mono text-sm text-foreground">{state.execution_id}</h1>
+        <Badge variant={statusVariant(state.status)}>{state.status}</Badge>
+        <span className="truncate text-xs text-muted-foreground">{state.task.description}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {!isTerminal && <CancelButton executionId={state.execution_id} />}
+        </div>
       </div>
-      <p className="mt-1 text-neutral-600 dark:text-neutral-400">{state.task.description}</p>
-      {state.final_output && (
-        <p className="mt-3 rounded-lg bg-black/5 p-3 text-sm dark:bg-white/5">
-          {state.final_output}
-        </p>
-      )}
 
       {pendingApprovals.length > 0 && (
-        <div className="mt-6 space-y-3">
+        <div className="space-y-3 border-b border-border bg-surface px-6 py-4">
           {pendingApprovals.map((approval) => (
             <ApprovalPanel key={approval.id} executionId={id} approval={approval} />
           ))}
         </div>
       )}
 
-      <section className="mt-8">
-        <h2 className="mb-2 text-sm font-medium text-neutral-500">Nodes</h2>
-        <div className="overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
-          <table className="w-full text-sm">
-            <thead className="bg-black/5 text-left text-xs text-neutral-500 dark:bg-white/5">
-              <tr>
-                <th className="px-3 py-2 font-medium">Node</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Attempts</th>
-                <th className="px-3 py-2 font-medium">Duration</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5 dark:divide-white/10">
-              {Object.values(state.node_states).map((node) => (
-                <tr key={node.node_id}>
-                  <td className="px-3 py-2 font-mono">{node.node_id}</td>
-                  <td className="px-3 py-2">{node.status}</td>
-                  <td className="px-3 py-2">{node.attempts}</td>
-                  <td className="px-3 py-2">
-                    {node.duration_seconds != null ? `${node.duration_seconds.toFixed(2)}s` : "—"}
-                  </td>
-                </tr>
-              ))}
-              {Object.keys(state.node_states).length === 0 && (
-                <tr>
-                  <td className="px-3 py-3 text-neutral-500" colSpan={4}>
-                    No nodes yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {(agentInvocations.length > 0 || toolInvocations.length > 0) && (
-        <section className="mt-8">
-          <h2 className="mb-2 text-sm font-medium text-neutral-500">Invocations</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
-              <div className="border-b border-black/10 bg-black/5 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-white/15 dark:bg-white/5">
-                Agents ({agentInvocations.length})
-              </div>
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-black/5 dark:divide-white/10">
-                  {agentInvocations.map((inv) => (
-                    <tr key={inv.id}>
-                      <td className="px-3 py-2 font-mono">
-                        <Link href={`/agents/${inv.agent_id}`} className="hover:underline">
-                          {inv.agent_id}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2">{inv.status}</td>
-                      <td className="px-3 py-2 text-right text-neutral-500">
-                        {inv.tokens} tok &middot; ${inv.cost_usd.toFixed(4)}
-                      </td>
-                    </tr>
-                  ))}
-                  {agentInvocations.length === 0 && (
-                    <tr>
-                      <td className="px-3 py-3 text-neutral-500">No agent calls yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
-              <div className="border-b border-black/10 bg-black/5 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-white/15 dark:bg-white/5">
-                Tool calls ({toolInvocations.length})
-              </div>
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-black/5 dark:divide-white/10">
-                  {toolInvocations.map((inv) => (
-                    <tr key={inv.id}>
-                      <td className="px-3 py-2 font-mono">{inv.tool}</td>
-                      <td className="px-3 py-2">{inv.status}</td>
-                      <td className="px-3 py-2 text-right text-neutral-500">
-                        {inv.policy_effect}
-                      </td>
-                    </tr>
-                  ))}
-                  {toolInvocations.length === 0 && (
-                    <tr>
-                      <td className="px-3 py-3 text-neutral-500">No tool calls yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      )}
-
-      <section className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Cost" value={`$${state.budget_usage.cost_usd.toFixed(4)}`} />
-        <Stat
-          label="Tokens"
-          value={String(state.budget_usage.input_tokens + state.budget_usage.output_tokens)}
+      <div className="min-h-0 flex-1">
+        <ExecutionWorkspace
+          executionId={id}
+          state={state}
+          workflow={workflow}
+          initialEvents={events}
+          isTerminal={isTerminal}
+          agentInvocations={agentInvocations}
+          toolInvocations={toolInvocations}
         />
-        <Stat label="Agent steps" value={String(state.budget_usage.agent_steps)} />
-        <Stat label="Tool calls" value={String(state.budget_usage.tool_calls)} />
-      </section>
-
-      <section className="mt-8">
-        {isTerminal ? (
-          <Replay events={events} nodeIds={Object.keys(state.node_states)} />
-        ) : (
-          <LiveEvents executionId={state.execution_id} />
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-black/10 p-3 dark:border-white/15">
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className="mt-1 font-mono text-sm">{value}</div>
+      </div>
     </div>
   );
 }

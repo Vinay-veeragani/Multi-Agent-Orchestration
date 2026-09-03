@@ -1,26 +1,135 @@
 @import "tailwindcss";
 
+/* This app has one visual identity -- a dark operations console -- not a
+   light/dark toggle. Every existing `dark:` utility class already written
+   against this app's older light-default theme should simply always be
+   the active styling now, regardless of the viewer's OS preference. */
+@custom-variant dark (&);
+
+/* ---------------------------------------------------------------------
+   Dark AI Operations Console -- a deliberate visual identity, not a
+   "dark mode" toggle. Every surface below is a distinct elevation, not
+   one flat background with borders doing all the separation.
+   --------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #08090b;
+  --surface: #0d0f12;
+  --elevated: #12151a;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --foreground: #e8e9ec;
+  --muted-foreground: #8b8f98;
+  --subtle-foreground: #5c6067;
+
+  /* Electric violet/indigo accent -- the one saturated color used for
+     anything "primary"/interactive, so it stays meaningful. */
+  --primary: #7c6cf6;
+  --primary-foreground: #ffffff;
+  --primary-muted: rgba(124, 108, 246, 0.14);
+
+  /* Status colors: each maps to exactly one meaning throughout the app. */
+  --success: #34d399;
+  --success-muted: rgba(52, 211, 153, 0.14);
+  --warning: #f5b350;
+  --warning-muted: rgba(245, 179, 80, 0.14);
+  --danger: #f2637a;
+  --danger-muted: rgba(242, 99, 122, 0.14);
+  --running: #4cc2f1;
+  --running-muted: rgba(76, 194, 241, 0.14);
+  --approval: #b98cf2;
+  --approval-muted: rgba(185, 140, 242, 0.14);
+
+  --radius: 0.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
   --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-muted: var(--primary-muted);
+
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-danger: var(--danger);
+  --color-danger-muted: var(--danger-muted);
+  --color-running: var(--running);
+  --color-running-muted: var(--running-muted);
+  --color-approval: var(--approval);
+  --color-approval-muted: var(--approval-muted);
+
+  --radius-md: var(--radius);
+
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+::selection {
+  background: var(--primary-muted);
+  color: var(--foreground);
+}
+
+/* Subtle scrollbars -- a console should not have OS-default chrome bars. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--running-muted);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(76, 194, 241, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(76, 194, 241, 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
