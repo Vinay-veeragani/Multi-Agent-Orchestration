@@ -491,8 +491,37 @@ class BenchmarkRunRow(Base):
     )
 
 
+class ProviderCredentialRow(Base):
+    """An operator-supplied LLM provider credential, set from the UI.
+
+    Deliberately separate from :mod:`orchestration.config`'s env-based
+    ``Settings``: a `.env` file is read once at process start, but a provider
+    key entered through the Providers page must take effect without a
+    restart. Stored in plain text -- this is a reference deployment, not a
+    secrets manager; a production fork should encrypt this column or move
+    credentials to a real secret store rather than trust this table as-is.
+    """
+
+    __tablename__ = "provider_credentials"
+
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    #: A model catalog key to prefer when this credential is the most
+    #: recently updated one with a selection -- see
+    #: `orchestration.llm.factory.resolve_pinned_model_key`.
+    selected_model_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=_now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=_now(), onupdate=_now()
+    )
+
+
 #: Every table, in dependency order. Used by the test harness to truncate.
 ALL_TABLES: tuple[str, ...] = (
+    "provider_credentials",
     "benchmark_runs",
     "evidence_chunks",
     "approvals",

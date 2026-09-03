@@ -807,6 +807,109 @@ class TestCancellation:
         assert response.status_code == 404
 
 
+class TestProviders:
+    """`/providers` -- credentials set live from the UI, not `.env`.
+
+    `_client`'s AppState is built with an injected mock `LLMClient` (see
+    `build_app_state`'s `llm_was_injected` guard), so it never calls
+    `reload_providers()` at startup the way real app startup does. The routes
+    under test call it themselves on every write, which is exactly the
+    behaviour being verified here -- but it does mean a test must not also
+    try to run an execution afterward in the same client, since reloading
+    replaces the injected MockProvider with a real network-calling one.
+    """
+
+    async def test_lists_every_known_provider_as_unconfigured_by_default(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get("/providers")
+        assert response.status_code == 200
+        body = response.json()
+        names = {p["provider"] for p in body}
+        assert names == {"openai", "anthropic", "gemini", "groq", "ollama"}
+        assert all(p["configured"] is False and p["source"] == "none" for p in body)
+        groq = next(p for p in body if p["provider"] == "groq")
+        assert any(m["key"] == "gpt-oss-120b-groq" for m in groq["models"])
+
+    async def test_setting_an_api_key_marks_it_configured_via_database(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.put("/providers/groq", json={"api_key": "gsk-super-secret"})
+            assert response.status_code == 200
+            body = response.json()
+            assert body["configured"] is True
+            assert body["source"] == "database"
+            assert body["masked_api_key"] == "gsk-...cret"
+
+            listed = await client.get("/providers")
+        groq = next(p for p in listed.json() if p["provider"] == "groq")
+        assert groq["configured"] is True
+
+    async def test_the_raw_api_key_never_appears_in_the_response(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.put("/providers/groq", json={"api_key": "gsk-super-secret"})
+        assert "gsk-super-secret" not in response.text
+
+    async def test_selecting_a_model_from_another_provider_is_rejected(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.put(
+                "/providers/groq",
+                json={"api_key": "gsk-x", "selected_model_key": "gemini-2.5-flash"},
+            )
+        assert response.status_code == 400
+
+    async def test_updating_only_the_model_selection_keeps_the_existing_key(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            await client.put("/providers/groq", json={"api_key": "gsk-super-secret"})
+            response = await client.put(
+                "/providers/groq", json={"selected_model_key": "gpt-oss-120b-groq"}
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["configured"] is True
+        assert body["masked_api_key"] == "gsk-...cret"
+        assert body["selected_model_key"] == "gpt-oss-120b-groq"
+
+    async def test_clear_api_key_reverts_to_unconfigured(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            await client.put("/providers/groq", json={"api_key": "gsk-super-secret"})
+            response = await client.put("/providers/groq", json={"clear_api_key": True})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["configured"] is False
+        assert body["masked_api_key"] is None
+
+    async def test_delete_removes_a_stored_credential(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            await client.put("/providers/groq", json={"api_key": "gsk-super-secret"})
+            deleted = await client.delete("/providers/groq")
+            assert deleted.status_code == 200
+            assert deleted.json()["configured"] is False
+
+            listed = await client.get("/providers")
+        groq = next(p for p in listed.json() if p["provider"] == "groq")
+        assert groq["configured"] is False
+
+    async def test_an_unknown_provider_name_is_404(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.put("/providers/mock", json={"api_key": "x"})
+        assert response.status_code == 404
+
+
 class TestBenchmarks:
     """The routes are new; the write path (`BenchmarkRepository.save`, called
     from `orchestration.evaluation.report.run_benchmark`) is not -- see

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from orchestration.api.routes import agents, benchmarks, executions, system, workflows
+from orchestration.api.routes import agents, benchmarks, executions, providers, system, workflows
 
 api_router = APIRouter()
 api_router.include_router(system.router)
@@ -12,5 +12,6 @@ api_router.include_router(agents.router)
 api_router.include_router(workflows.router)
 api_router.include_router(executions.router)
 api_router.include_router(benchmarks.router)
+api_router.include_router(providers.router)
 
 __all__ = ["api_router"]

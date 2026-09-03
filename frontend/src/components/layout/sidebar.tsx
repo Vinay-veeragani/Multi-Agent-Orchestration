@@ -4,8 +4,6 @@ import {
   Bot,
   ChevronsLeft,
   ChevronsRight,
-  FileSearch,
-  FlaskConical,
   Gauge,
   Key,
   Library,
@@ -45,16 +43,9 @@ const SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Intelligence",
-    items: [
-      { label: "Evaluations", href: "/benchmarks", icon: FileSearch },
-      { label: "Experiments", icon: FlaskConical },
-    ],
-  },
-  {
     label: "Operations",
     items: [
-      { label: "Providers", icon: Key },
+      { label: "Providers", href: "/providers", icon: Key },
       { label: "Policies", icon: Shield },
       { label: "Observability", icon: Server },
     ],

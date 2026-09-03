@@ -53,6 +53,7 @@ from orchestration.persistence.tables import (
     ExecutionEventRow,
     ExecutionRow,
     ExecutionStateRow,
+    ProviderCredentialRow,
     ToolInvocationRow,
     ToolRow,
     WorkflowEdgeRow,
@@ -1117,3 +1118,72 @@ class BenchmarkRepository:
             }
             for r in rows
         ]
+
+
+class ProviderCredentialRepository:
+    """Persistence for operator-supplied LLM provider credentials.
+
+    A row here is a full replace, same convention as :class:`AgentRepository`
+    -- the caller (the ``/providers`` route) reads the existing row first when
+    it needs to merge a partial update, rather than this layer guessing which
+    ``None`` means "unset" versus "leave alone".
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert(
+        self,
+        provider: str,
+        *,
+        api_key: str | None,
+        base_url: str | None,
+        selected_model_key: str | None,
+    ) -> JsonDict:
+        statement = (
+            pg_insert(ProviderCredentialRow)
+            .values(
+                provider=provider,
+                api_key=api_key,
+                base_url=base_url,
+                selected_model_key=selected_model_key,
+            )
+            .on_conflict_do_update(
+                index_elements=[ProviderCredentialRow.provider],
+                set_={
+                    "api_key": api_key,
+                    "base_url": base_url,
+                    "selected_model_key": selected_model_key,
+                    "updated_at": utc_now(),
+                },
+            )
+        )
+        await self._session.execute(statement)
+        return await self.get(provider)  # type: ignore[return-value]
+
+    async def get(self, provider: str) -> JsonDict | None:
+        row = await self._session.get(ProviderCredentialRow, provider)
+        return self._as_dict(row) if row else None
+
+    async def list_all(self) -> list[JsonDict]:
+        rows = (
+            (await self._session.execute(select(ProviderCredentialRow)))
+            .scalars()
+            .all()
+        )
+        return [self._as_dict(r) for r in rows]
+
+    async def delete(self, provider: str) -> None:
+        await self._session.execute(
+            delete(ProviderCredentialRow).where(ProviderCredentialRow.provider == provider)
+        )
+
+    @staticmethod
+    def _as_dict(row: ProviderCredentialRow) -> JsonDict:
+        return {
+            "provider": row.provider,
+            "api_key": row.api_key,
+            "base_url": row.base_url,
+            "selected_model_key": row.selected_model_key,
+            "updated_at": row.updated_at,
+        }

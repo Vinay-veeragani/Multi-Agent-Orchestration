@@ -17,9 +17,18 @@ from orchestration.api.runner import ExecutionRunner
 from orchestration.checkpoint.manager import CheckpointManager
 from orchestration.config import Settings, get_settings
 from orchestration.coordination.redis import ConcurrencyLimiter, RedisCoordinator
-from orchestration.llm.factory import LLMClient, configured_providers
+from orchestration.llm.factory import (
+    LLMClient,
+    build_provider_builders,
+    configured_providers,
+    resolve_pinned_model_key,
+)
 from orchestration.persistence.database import Database
-from orchestration.persistence.repositories import AgentRepository, ToolRepository
+from orchestration.persistence.repositories import (
+    AgentRepository,
+    ProviderCredentialRepository,
+    ToolRepository,
+)
 from orchestration.policies.engine import PolicyEngine, build_default_policy_engine
 from orchestration.routing.model_router import ModelRouter, build_default_router
 from orchestration.tools.mcp import MCPClient, discover_mcp_tools
@@ -48,6 +57,37 @@ class AppState:
 
     def __post_init__(self) -> None:
         self.runner = ExecutionRunner(self)
+
+    async def reload_providers(self) -> None:
+        """Rebuild the LLM client and router from settings plus stored credentials.
+
+        Called once during startup and again every time `PUT`/`DELETE
+        /providers/{name}` changes a row -- a key entered through the
+        Providers page must take effect on the next call this process makes,
+        not after a restart, which is the whole point of storing it in
+        `provider_credentials` instead of only ever reading `.env`.
+
+        Executions already in flight keep whichever `LLMClient`/`ModelRouter`
+        instance they were constructed with (see `ExecutionRunner._run_engine`,
+        which reads `self._app.llm`/`.router` fresh per execution) -- only a
+        *new* execution picks up a just-changed credential.
+        """
+        async with self.database.session() as session:
+            rows = await ProviderCredentialRepository(session).list_all()
+        overrides = {row["provider"]: row for row in rows}
+
+        available = configured_providers(self.settings, overrides=overrides)
+        mock_only = tuple(available) == ("mock",)
+        builders = build_provider_builders(self.settings, overrides=overrides)
+
+        old_llm = self.llm
+        self.llm = LLMClient(builders=builders)
+        self.router = build_default_router(
+            mock_only=mock_only,
+            configured_providers=available,
+            force_model_key=resolve_pinned_model_key(self.settings, rows),
+        )
+        await old_llm.aclose()
 
 
 async def build_app_state(
@@ -97,6 +137,7 @@ async def build_app_state(
 
     policy = build_default_policy_engine(agents=agents, tools=tools)
 
+    llm_was_injected = llm is not None
     available = configured_providers(resolved)
     mock_only = tuple(available) == ("mock",)
     llm = llm or LLMClient()
@@ -114,7 +155,7 @@ async def build_app_state(
         for spec in tools.list_specs(include_disabled=True):
             await tool_repo.upsert(spec, enabled=tools.is_enabled(spec.name))
 
-    return AppState(
+    app_state = AppState(
         settings=resolved,
         database=database,
         redis=redis,
@@ -128,6 +169,14 @@ async def build_app_state(
         sandbox_root=resolved.file_sandbox_root,
         mcp_clients=mcp_clients,
     )
+    if llm_was_injected:
+        # A test (or another caller) supplied its own LLMClient -- typically a
+        # scripted MockProvider -- specifically to keep real credentials and
+        # DB-stored overrides out of it. Folding provider_credentials in here
+        # would silently replace that intentional substitution.
+        return app_state
+    await app_state.reload_providers()
+    return app_state
 
 
 async def close_app_state(state: AppState) -> None:

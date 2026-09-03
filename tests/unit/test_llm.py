@@ -14,6 +14,7 @@ import json
 import httpx
 import pytest
 
+from orchestration.config import Settings
 from orchestration.domain.enums import ModelCapability, Provider
 from orchestration.domain.model import (
     EmbeddingRequest,
@@ -35,7 +36,12 @@ from orchestration.llm.base import (
     extract_json_object,
     generate_structured,
 )
-from orchestration.llm.factory import LLMClient
+from orchestration.llm.factory import (
+    LLMClient,
+    build_provider_builders,
+    configured_providers,
+    resolve_pinned_model_key,
+)
 from orchestration.llm.mock import (
     CONTENT_FAULT_PAYLOADS,
     Fault,
@@ -1005,3 +1011,63 @@ class TestSmartModelIsReachable:
         router = ModelRouter(build_catalog(mock_only=True))
         selection = router.select(complexity=TaskComplexity.COMPLEX)
         assert selection.model.key == MOCK_SMART.key
+
+
+class TestProviderOverrides:
+    """A key entered on the Providers page must take priority over `.env`."""
+
+    def test_a_db_override_makes_an_unconfigured_provider_available(self) -> None:
+        settings = Settings(_env_file=None)
+        assert "groq" not in configured_providers(settings)
+
+        available = configured_providers(
+            settings, overrides={"groq": {"api_key": "gsk-from-ui"}}
+        )
+        assert "groq" in available
+
+    def test_a_db_override_wins_over_an_env_key(self) -> None:
+        settings = Settings(_env_file=None, groq_api_key="gsk-from-env")  # type: ignore[arg-type]
+        builders = build_provider_builders(
+            settings, overrides={"groq": {"api_key": "gsk-from-ui"}}
+        )
+        adapter = builders[Provider.GROQ]()
+        assert adapter._api_key == "gsk-from-ui"  # type: ignore[attr-defined]
+
+    def test_an_override_without_a_key_falls_back_to_env(self) -> None:
+        settings = Settings(_env_file=None, groq_api_key="gsk-from-env")  # type: ignore[arg-type]
+        builders = build_provider_builders(
+            settings, overrides={"groq": {"selected_model_key": "gpt-oss-120b-groq"}}
+        )
+        adapter = builders[Provider.GROQ]()
+        assert adapter._api_key == "gsk-from-env"  # type: ignore[attr-defined]
+
+    def test_a_db_override_base_url_wins_over_the_default(self) -> None:
+        settings = Settings(_env_file=None)
+        builders = build_provider_builders(
+            settings,
+            overrides={
+                "groq": {"api_key": "gsk-from-ui", "base_url": "https://groq.example/v1"}
+            },
+        )
+        adapter = builders[Provider.GROQ]()
+        assert adapter._base_url == "https://groq.example/v1"  # type: ignore[attr-defined]
+
+    def test_ollama_is_available_once_a_row_exists_even_without_ollama_enabled(self) -> None:
+        settings = Settings(_env_file=None, ollama_enabled=False)
+        assert "ollama" not in configured_providers(settings)
+
+        available = configured_providers(settings, overrides={"ollama": {"base_url": "x"}})
+        assert "ollama" in available
+
+    def test_pinned_model_prefers_the_most_recently_updated_selection(self) -> None:
+        settings = Settings(_env_file=None, pinned_model_key="mock-fast")
+        rows = [
+            {"provider": "groq", "selected_model_key": "gpt-oss-120b-groq", "updated_at": 1},
+            {"provider": "gemini", "selected_model_key": "gemini-2.5-flash", "updated_at": 2},
+        ]
+        assert resolve_pinned_model_key(settings, rows) == "gemini-2.5-flash"
+
+    def test_pinned_model_falls_back_to_settings_when_nothing_is_selected(self) -> None:
+        settings = Settings(_env_file=None, pinned_model_key="mock-fast")
+        rows = [{"provider": "groq", "selected_model_key": None, "updated_at": 1}]
+        assert resolve_pinned_model_key(settings, rows) == "mock-fast"

@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Awaitable, Callable
-from typing import TypeVar
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -47,73 +47,125 @@ TModel = TypeVar("TModel", bound=BaseModel)
 #: Builds a provider on demand. Called at most once per provider per client.
 ProviderBuilder = Callable[[], LLMProvider]
 
+#: One provider's operator-supplied override, as persisted by
+#: ProviderCredentialRepository and surfaced through `PUT /providers/{name}` --
+#: keyed by provider name, e.g. {"groq": {"api_key": "...", "base_url": None,
+#: "selected_model_key": "gpt-oss-120b-groq"}}. Lets a key entered in the UI
+#: take effect immediately, without the `.env`-only restart env vars require.
+ProviderOverrides = Mapping[str, Mapping[str, Any]]
 
-def build_provider_builders(settings: Settings) -> dict[Provider, ProviderBuilder]:
+
+def _override_value(overrides: ProviderOverrides | None, provider: str, field: str) -> Any | None:
+    if overrides is None:
+        return None
+    return (overrides.get(provider) or {}).get(field)
+
+
+def _resolved_key(
+    overrides: ProviderOverrides | None, provider: str, settings_secret: Any
+) -> str | None:
+    """The API key to use: a UI-supplied override wins over `.env`."""
+    override = _override_value(overrides, provider, "api_key")
+    if override:
+        return str(override)
+    return settings_secret.get_secret_value() if settings_secret else None
+
+
+def _resolved_base_url(overrides: ProviderOverrides | None, provider: str, default: str) -> str:
+    override = _override_value(overrides, provider, "base_url")
+    return str(override) if override else default
+
+
+def build_provider_builders(
+    settings: Settings, *, overrides: ProviderOverrides | None = None
+) -> dict[Provider, ProviderBuilder]:
     """Map each provider to a lazy constructor.
 
     Lazy because constructing an adapter validates its credential. Eager
     construction would make an install with only an Anthropic key fail at
     startup over a missing OpenAI key it never intended to use.
+
+    ``overrides`` -- operator-supplied credentials from the Providers page,
+    read from `provider_credentials` -- take priority over the matching
+    `.env`/`ORCH_*` setting for that provider, field by field.
     """
     return {
         Provider.MOCK: lambda: MockProvider(),
         Provider.OPENAI: lambda: OpenAICompatibleProvider(
-            base_url=settings.openai_base_url,
-            api_key=(
-                settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
-            ),
+            base_url=_resolved_base_url(overrides, "openai", settings.openai_base_url),
+            api_key=_resolved_key(overrides, "openai", settings.openai_api_key),
             timeout_seconds=settings.llm_timeout_seconds,
             provider=Provider.OPENAI,
         ),
         Provider.ANTHROPIC: lambda: AnthropicProvider(
-            base_url=settings.anthropic_base_url,
-            api_key=(
-                settings.anthropic_api_key.get_secret_value()
-                if settings.anthropic_api_key
-                else None
-            ),
+            base_url=_resolved_base_url(overrides, "anthropic", settings.anthropic_base_url),
+            api_key=_resolved_key(overrides, "anthropic", settings.anthropic_api_key),
             timeout_seconds=settings.llm_timeout_seconds,
         ),
         Provider.GEMINI: lambda: GeminiProvider(
-            base_url=settings.gemini_base_url,
-            api_key=(
-                settings.gemini_api_key.get_secret_value() if settings.gemini_api_key else None
-            ),
+            base_url=_resolved_base_url(overrides, "gemini", settings.gemini_base_url),
+            api_key=_resolved_key(overrides, "gemini", settings.gemini_api_key),
             timeout_seconds=settings.llm_timeout_seconds,
         ),
         Provider.OLLAMA: lambda: ollama_provider(
-            base_url=settings.ollama_base_url,
+            base_url=_resolved_base_url(overrides, "ollama", settings.ollama_base_url),
             timeout_seconds=max(settings.llm_timeout_seconds, 120.0),
         ),
         Provider.GROQ: lambda: OpenAICompatibleProvider(
-            base_url=settings.groq_base_url,
-            api_key=(settings.groq_api_key.get_secret_value() if settings.groq_api_key else None),
+            base_url=_resolved_base_url(overrides, "groq", settings.groq_base_url),
+            api_key=_resolved_key(overrides, "groq", settings.groq_api_key),
             timeout_seconds=settings.llm_timeout_seconds,
             provider=Provider.GROQ,
         ),
     }
 
 
-def configured_providers(settings: Settings) -> tuple[str, ...]:
+def configured_providers(
+    settings: Settings, *, overrides: ProviderOverrides | None = None
+) -> tuple[str, ...]:
     """Providers this deployment can actually reach.
 
     Handed to the model router so it never selects a model whose credential is
     absent. Mock is always available; Ollama has no credential to check, so
     ``ollama_enabled`` -- not the mere presence of ``ollama_base_url``, which
-    always has a default -- is what signals it was actually asked for.
+    always has a default -- is what signals it was actually asked for, unless
+    a UI-supplied override for it exists (an explicit key entry is itself the
+    opt-in for every other provider, so Ollama gets the same treatment when a
+    row for it exists in `provider_credentials`).
     """
+    overrides = overrides or {}
     available = ["mock"]
-    if settings.openai_api_key:
+    if _resolved_key(overrides, "openai", settings.openai_api_key):
         available.append("openai")
-    if settings.anthropic_api_key:
+    if _resolved_key(overrides, "anthropic", settings.anthropic_api_key):
         available.append("anthropic")
-    if settings.gemini_api_key:
+    if _resolved_key(overrides, "gemini", settings.gemini_api_key):
         available.append("gemini")
-    if settings.ollama_enabled:
+    if settings.ollama_enabled or "ollama" in overrides:
         available.append("ollama")
-    if settings.groq_api_key:
+    if _resolved_key(overrides, "groq", settings.groq_api_key):
         available.append("groq")
     return tuple(available)
+
+
+def resolve_pinned_model_key(
+    settings: Settings, credential_rows: list[Mapping[str, Any]] | None = None
+) -> str | None:
+    """The model every routing decision should be forced onto, if any.
+
+    A provider row's `selected_model_key` (set via the Providers page) wins
+    over `ORCH_PINNED_MODEL_KEY` -- the UI is the live control surface a
+    deployment actually interacts with; the env var is the fallback for one
+    set entirely from `.env`. When more than one provider row has a selection
+    (the UI does not stop you from picking a model on two different
+    providers), the most recently updated one wins, so the last thing an
+    operator actually chose is the one that takes effect.
+    """
+    rows = [r for r in (credential_rows or []) if r.get("selected_model_key")]
+    if rows:
+        newest = max(rows, key=lambda r: r["updated_at"])
+        return str(newest["selected_model_key"])
+    return settings.pinned_model_key
 
 
 class LLMClient:

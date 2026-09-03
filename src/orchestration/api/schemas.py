@@ -9,6 +9,8 @@ the approval decisions.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from orchestration.domain.base import JsonDict
@@ -73,6 +75,52 @@ class CancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str = Field(default="cancelled by operator", max_length=2_000)
+
+
+class ModelOption(BaseModel):
+    """One catalog model belonging to a provider -- the Providers page's model dropdown."""
+
+    key: str
+    model: str
+    context_limit: int
+    input_cost_per_mtok: float
+    output_cost_per_mtok: float
+    capabilities: tuple[str, ...]
+
+
+class ProviderInfo(BaseModel):
+    """One LLM provider's configuration status, for ``GET /providers``.
+
+    The API key itself is never returned -- only whether one is set, where it
+    came from, and a masked preview -- so this response is safe to render
+    directly in the UI.
+    """
+
+    provider: str
+    label: str
+    configured: bool
+    source: Literal["database", "environment", "none"]
+    masked_api_key: str | None = None
+    base_url: str | None = None
+    selected_model_key: str | None = None
+    models: tuple[ModelOption, ...] = ()
+
+
+class UpdateProviderRequest(BaseModel):
+    """Body for ``PUT /providers/{provider}``.
+
+    ``api_key`` omitted (``None``) leaves whatever is already stored alone --
+    a UI re-saving just the model selection must not accidentally blank out a
+    key the user isn't retyping. ``clear_api_key`` is the explicit, separate
+    way to actually remove one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: str | None = Field(default=None, min_length=1, max_length=500)
+    clear_api_key: bool = False
+    base_url: str | None = Field(default=None, max_length=512)
+    selected_model_key: str | None = None
 
 
 class HealthResponse(BaseModel):

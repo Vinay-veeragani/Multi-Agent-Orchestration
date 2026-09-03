@@ -401,4 +401,56 @@ export function getBenchmarkRun(reportId: string): Promise<BenchmarkReport> {
   return request<BenchmarkReport>(`/benchmarks/${encodeURIComponent(reportId)}`);
 }
 
+export interface ModelOption {
+  key: string;
+  model: string;
+  context_limit: number;
+  input_cost_per_mtok: number;
+  output_cost_per_mtok: number;
+  capabilities: string[];
+}
+
+export interface ProviderInfo {
+  provider: string;
+  label: string;
+  configured: boolean;
+  source: "database" | "environment" | "none";
+  masked_api_key: string | null;
+  base_url: string | null;
+  selected_model_key: string | null;
+  models: ModelOption[];
+}
+
+export function listProviders(): Promise<ProviderInfo[]> {
+  return request<ProviderInfo[]>("/providers");
+}
+
+export interface UpdateProviderInput {
+  apiKey?: string;
+  clearApiKey?: boolean;
+  baseUrl?: string;
+  selectedModelKey?: string | null;
+}
+
+export function updateProvider(
+  provider: string,
+  input: UpdateProviderInput,
+): Promise<ProviderInfo> {
+  return request<ProviderInfo>(`/providers/${encodeURIComponent(provider)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      api_key: input.apiKey || undefined,
+      clear_api_key: input.clearApiKey ?? false,
+      base_url: input.baseUrl || undefined,
+      selected_model_key: input.selectedModelKey,
+    }),
+  });
+}
+
+export function deleteProviderCredential(provider: string): Promise<ProviderInfo> {
+  return request<ProviderInfo>(`/providers/${encodeURIComponent(provider)}`, {
+    method: "DELETE",
+  });
+}
+
 export { config as orchestratorConfig, ApiError };
