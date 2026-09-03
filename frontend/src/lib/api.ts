@@ -421,8 +421,20 @@ export interface ProviderInfo {
   models: ModelOption[];
 }
 
-export function listProviders(): Promise<ProviderInfo[]> {
-  return request<ProviderInfo[]>("/providers");
+export interface ProvidersPage {
+  active_provider: string | null;
+  providers: ProviderInfo[];
+}
+
+export function listProviders(): Promise<ProvidersPage> {
+  return request<ProvidersPage>("/providers");
+}
+
+export function setActiveProvider(provider: string | null): Promise<ProvidersPage> {
+  return request<ProvidersPage>("/providers/active", {
+    method: "PUT",
+    body: JSON.stringify({ provider }),
+  });
 }
 
 export interface UpdateProviderInput {

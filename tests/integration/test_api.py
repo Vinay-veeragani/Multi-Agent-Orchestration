@@ -826,10 +826,12 @@ class TestProviders:
             response = await client.get("/providers")
         assert response.status_code == 200
         body = response.json()
-        names = {p["provider"] for p in body}
+        assert body["active_provider"] is None
+        providers = body["providers"]
+        names = {p["provider"] for p in providers}
         assert names == {"openai", "anthropic", "gemini", "groq", "ollama"}
-        assert all(p["configured"] is False and p["source"] == "none" for p in body)
-        groq = next(p for p in body if p["provider"] == "groq")
+        assert all(p["configured"] is False and p["source"] == "none" for p in providers)
+        groq = next(p for p in providers if p["provider"] == "groq")
         assert any(m["key"] == "gpt-oss-120b-groq" for m in groq["models"])
 
     async def test_setting_an_api_key_marks_it_configured_via_database(
@@ -844,7 +846,7 @@ class TestProviders:
             assert body["masked_api_key"] == "gsk-...cret"
 
             listed = await client.get("/providers")
-        groq = next(p for p in listed.json() if p["provider"] == "groq")
+        groq = next(p for p in listed.json()["providers"] if p["provider"] == "groq")
         assert groq["configured"] is True
 
     async def test_the_raw_api_key_never_appears_in_the_response(
@@ -899,7 +901,7 @@ class TestProviders:
             assert deleted.json()["configured"] is False
 
             listed = await client.get("/providers")
-        groq = next(p for p in listed.json() if p["provider"] == "groq")
+        groq = next(p for p in listed.json()["providers"] if p["provider"] == "groq")
         assert groq["configured"] is False
 
     async def test_an_unknown_provider_name_is_404(
@@ -908,6 +910,50 @@ class TestProviders:
         async with _client(database, redis_coordinator, MockProvider()) as client:
             response = await client.put("/providers/mock", json={"api_key": "x"})
         assert response.status_code == 404
+
+    async def test_activating_an_unconnected_provider_is_rejected(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.put("/providers/active", json={"provider": "groq"})
+        assert response.status_code == 400
+
+    async def test_activating_a_connected_provider_restricts_routing_to_it(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            await client.put("/providers/groq", json={"api_key": "gsk-x"})
+            await client.put("/providers/gemini", json={"api_key": "AIza-y"})
+
+            response = await client.put("/providers/active", json={"provider": "groq"})
+            assert response.status_code == 200
+            body = response.json()
+            assert body["active_provider"] == "groq"
+
+            listed = await client.get("/providers")
+        assert listed.json()["active_provider"] == "groq"
+
+    async def test_clearing_the_active_provider_goes_back_to_automatic(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            await client.put("/providers/groq", json={"api_key": "gsk-x"})
+            await client.put("/providers/active", json={"provider": "groq"})
+
+            response = await client.put("/providers/active", json={"provider": None})
+        assert response.status_code == 200
+        assert response.json()["active_provider"] is None
+
+    async def test_disconnecting_the_active_provider_clears_it_too(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            await client.put("/providers/groq", json={"api_key": "gsk-x"})
+            await client.put("/providers/active", json={"provider": "groq"})
+
+            await client.delete("/providers/groq")
+            listed = await client.get("/providers")
+        assert listed.json()["active_provider"] is None
 
 
 class TestBenchmarks:

@@ -1059,15 +1059,18 @@ class TestProviderOverrides:
         available = configured_providers(settings, overrides={"ollama": {"base_url": "x"}})
         assert "ollama" in available
 
-    def test_pinned_model_prefers_the_most_recently_updated_selection(self) -> None:
+    def test_pinned_model_comes_from_the_active_provider_s_own_selection(self) -> None:
         settings = Settings(_env_file=None, pinned_model_key="mock-fast")
-        rows = [
-            {"provider": "groq", "selected_model_key": "gpt-oss-120b-groq", "updated_at": 1},
-            {"provider": "gemini", "selected_model_key": "gemini-2.5-flash", "updated_at": 2},
-        ]
-        assert resolve_pinned_model_key(settings, rows) == "gemini-2.5-flash"
+        active_row = {"provider": "groq", "selected_model_key": "gpt-oss-120b-groq"}
+        assert resolve_pinned_model_key(settings, active_row) == "gpt-oss-120b-groq"
+
+    def test_an_inactive_provider_s_selection_never_leaks_in(self) -> None:
+        """Only the active provider's own row is consulted -- a model chosen
+        on some other, inactive provider must have no effect."""
+        settings = Settings(_env_file=None, pinned_model_key="mock-fast")
+        assert resolve_pinned_model_key(settings, None) == "mock-fast"
 
     def test_pinned_model_falls_back_to_settings_when_nothing_is_selected(self) -> None:
         settings = Settings(_env_file=None, pinned_model_key="mock-fast")
-        rows = [{"provider": "groq", "selected_model_key": None, "updated_at": 1}]
-        assert resolve_pinned_model_key(settings, rows) == "mock-fast"
+        active_row = {"provider": "groq", "selected_model_key": None}
+        assert resolve_pinned_model_key(settings, active_row) == "mock-fast"

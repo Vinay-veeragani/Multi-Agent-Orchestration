@@ -149,22 +149,21 @@ def configured_providers(
 
 
 def resolve_pinned_model_key(
-    settings: Settings, credential_rows: list[Mapping[str, Any]] | None = None
+    settings: Settings, active_provider_row: Mapping[str, Any] | None
 ) -> str | None:
     """The model every routing decision should be forced onto, if any.
 
-    A provider row's `selected_model_key` (set via the Providers page) wins
-    over `ORCH_PINNED_MODEL_KEY` -- the UI is the live control surface a
-    deployment actually interacts with; the env var is the fallback for one
-    set entirely from `.env`. When more than one provider row has a selection
-    (the UI does not stop you from picking a model on two different
-    providers), the most recently updated one wins, so the last thing an
-    operator actually chose is the one that takes effect.
+    Scoped to the single "active provider" (see `RoutingSettingsRepository`
+    and the Providers page's "Active provider" control) rather than scanning
+    every provider row -- exclusivity is the point of having an active
+    provider at all, so a model chosen on some other, inactive provider must
+    not leak in. Falls back to `ORCH_PINNED_MODEL_KEY` only when nothing is
+    set through the UI at all (no active provider, or an active provider with
+    no model chosen -- the router then picks per call as usual, scoped to
+    that provider's own models).
     """
-    rows = [r for r in (credential_rows or []) if r.get("selected_model_key")]
-    if rows:
-        newest = max(rows, key=lambda r: r["updated_at"])
-        return str(newest["selected_model_key"])
+    if active_provider_row and active_provider_row.get("selected_model_key"):
+        return str(active_provider_row["selected_model_key"])
     return settings.pinned_model_key
 
 

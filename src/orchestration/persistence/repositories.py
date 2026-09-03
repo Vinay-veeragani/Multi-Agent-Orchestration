@@ -54,6 +54,7 @@ from orchestration.persistence.tables import (
     ExecutionRow,
     ExecutionStateRow,
     ProviderCredentialRow,
+    RoutingSettingsRow,
     ToolInvocationRow,
     ToolRow,
     WorkflowEdgeRow,
@@ -1187,3 +1188,32 @@ class ProviderCredentialRepository:
             "selected_model_key": row.selected_model_key,
             "updated_at": row.updated_at,
         }
+
+
+class RoutingSettingsRepository:
+    """Persistence for the single "active provider" setting.
+
+    A singleton row (id ``"default"``) rather than one flag per provider:
+    exclusivity is the point of "active provider" -- there is exactly one, or
+    none, never several disagreeing rows to reconcile.
+    """
+
+    _ID = "default"
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_active_provider(self) -> str | None:
+        row = await self._session.get(RoutingSettingsRow, self._ID)
+        return row.active_provider if row else None
+
+    async def set_active_provider(self, provider: str | None) -> None:
+        statement = (
+            pg_insert(RoutingSettingsRow)
+            .values(id=self._ID, active_provider=provider)
+            .on_conflict_do_update(
+                index_elements=[RoutingSettingsRow.id],
+                set_={"active_provider": provider, "updated_at": utc_now()},
+            )
+        )
+        await self._session.execute(statement)

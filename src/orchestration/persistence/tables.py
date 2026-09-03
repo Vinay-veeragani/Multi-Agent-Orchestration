@@ -507,9 +507,10 @@ class ProviderCredentialRow(Base):
     provider: Mapped[str] = mapped_column(String(32), primary_key=True)
     api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    #: A model catalog key to prefer when this credential is the most
-    #: recently updated one with a selection -- see
-    #: `orchestration.llm.factory.resolve_pinned_model_key`.
+    #: A model catalog key to prefer when this provider is the active one --
+    #: see `RoutingSettingsRow` and `orchestration.llm.factory.
+    #: resolve_pinned_model_key`. Meaningless while this provider is not
+    #: active; kept even then so re-activating it remembers the choice.
     selected_model_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=_now()
@@ -519,8 +520,27 @@ class ProviderCredentialRow(Base):
     )
 
 
+class RoutingSettingsRow(Base):
+    """Which single connected provider drives every agent call, if any.
+
+    A singleton row (``id`` is always ``"default"``): exclusivity is the
+    point -- see the Providers page's "Active provider" control. ``None``
+    means automatic, cost-aware routing across every connected provider,
+    the behaviour this engine had before this table existed.
+    """
+
+    __tablename__ = "routing_settings"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    active_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=_now(), onupdate=_now()
+    )
+
+
 #: Every table, in dependency order. Used by the test harness to truncate.
 ALL_TABLES: tuple[str, ...] = (
+    "routing_settings",
     "provider_credentials",
     "benchmark_runs",
     "evidence_chunks",

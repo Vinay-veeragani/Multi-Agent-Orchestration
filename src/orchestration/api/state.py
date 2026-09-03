@@ -27,6 +27,7 @@ from orchestration.persistence.database import Database
 from orchestration.persistence.repositories import (
     AgentRepository,
     ProviderCredentialRepository,
+    RoutingSettingsRepository,
     ToolRepository,
 )
 from orchestration.policies.engine import PolicyEngine, build_default_policy_engine
@@ -71,21 +72,32 @@ class AppState:
         instance they were constructed with (see `ExecutionRunner._run_engine`,
         which reads `self._app.llm`/`.router` fresh per execution) -- only a
         *new* execution picks up a just-changed credential.
+
+        When an "active provider" is set (see `RoutingSettingsRepository`),
+        every other connected provider is excluded from routing entirely --
+        exclusivity is the point of choosing one, not just a tiebreaker among
+        several. With none set, every connected provider stays eligible and
+        the router's usual cost-aware selection decides per call, same as
+        before this setting existed.
         """
         async with self.database.session() as session:
             rows = await ProviderCredentialRepository(session).list_all()
+            active_provider = await RoutingSettingsRepository(session).get_active_provider()
         overrides = {row["provider"]: row for row in rows}
 
         available = configured_providers(self.settings, overrides=overrides)
+        if active_provider and active_provider in available:
+            available = tuple(p for p in available if p in ("mock", active_provider))
         mock_only = tuple(available) == ("mock",)
         builders = build_provider_builders(self.settings, overrides=overrides)
+        active_row = overrides.get(active_provider) if active_provider else None
 
         old_llm = self.llm
         self.llm = LLMClient(builders=builders)
         self.router = build_default_router(
             mock_only=mock_only,
             configured_providers=available,
-            force_model_key=resolve_pinned_model_key(self.settings, rows),
+            force_model_key=resolve_pinned_model_key(self.settings, active_row),
         )
         await old_llm.aclose()
 

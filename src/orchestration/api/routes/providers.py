@@ -12,13 +12,23 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, status
 
-from orchestration.api.schemas import ModelOption, ProviderInfo, UpdateProviderRequest
+from orchestration.api.schemas import (
+    ModelOption,
+    ProviderInfo,
+    ProvidersPageResponse,
+    SetActiveProviderRequest,
+    UpdateProviderRequest,
+)
 from orchestration.api.security import get_app_state, require_api_key
 from orchestration.api.state import AppState
 from orchestration.domain.enums import Provider
 from orchestration.errors import InputValidationError, NotFoundError
+from orchestration.llm.factory import configured_providers
 from orchestration.models.catalog import build_catalog
-from orchestration.persistence.repositories import ProviderCredentialRepository
+from orchestration.persistence.repositories import (
+    ProviderCredentialRepository,
+    RoutingSettingsRepository,
+)
 
 router = APIRouter(prefix="/providers", tags=["providers"], dependencies=[Depends(require_api_key)])
 
@@ -116,12 +126,44 @@ def _require_meta(provider: str) -> _ProviderMeta:
     return meta
 
 
-@router.get("", response_model=list[ProviderInfo])
-async def list_providers(app_state: AppState = Depends(get_app_state)) -> list[ProviderInfo]:
+@router.get("", response_model=ProvidersPageResponse)
+async def list_providers(app_state: AppState = Depends(get_app_state)) -> ProvidersPageResponse:
     async with app_state.database.session() as session:
         rows = await ProviderCredentialRepository(session).list_all()
+        active_provider = await RoutingSettingsRepository(session).get_active_provider()
     by_provider = {r["provider"]: r for r in rows}
-    return [_info(meta, app_state, by_provider.get(meta.name)) for meta in _PROVIDERS]
+    return ProvidersPageResponse(
+        active_provider=active_provider,
+        providers=tuple(_info(meta, app_state, by_provider.get(meta.name)) for meta in _PROVIDERS),
+    )
+
+
+@router.put("/active", response_model=ProvidersPageResponse)
+async def set_active_provider(
+    request: SetActiveProviderRequest, app_state: AppState = Depends(get_app_state)
+) -> ProvidersPageResponse:
+    """Choose the single provider that drives every agent call, or clear it.
+
+    Registered ahead of ``PUT /{provider}`` so the literal path ``active``
+    cannot be swallowed by that route's ``{provider}`` path parameter.
+    """
+    if request.provider is not None:
+        meta = _require_meta(request.provider)
+        async with app_state.database.session() as session:
+            rows = await ProviderCredentialRepository(session).list_all()
+        overrides = {row["provider"]: row for row in rows}
+        available = configured_providers(app_state.settings, overrides=overrides)
+        if meta.name not in available:
+            raise InputValidationError(
+                f"provider {meta.name!r} is not connected yet -- add an API key first",
+                provider=meta.name,
+            )
+
+    async with app_state.database.session() as session:
+        await RoutingSettingsRepository(session).set_active_provider(request.provider)
+
+    await app_state.reload_providers()
+    return await list_providers(app_state)
 
 
 @router.put("/{provider}", response_model=ProviderInfo)
@@ -177,10 +219,18 @@ async def update_provider(
 async def delete_provider(
     provider: str, app_state: AppState = Depends(get_app_state)
 ) -> ProviderInfo:
-    """Remove a UI-stored credential, reverting to whatever `.env` provides (if anything)."""
+    """Remove a UI-stored credential, reverting to whatever `.env` provides (if anything).
+
+    Clears "active provider" too if this was it -- an active provider that
+    is no longer connected would otherwise silently fall back to whatever
+    `.env` provides for it (or nothing), which is not what "active" means.
+    """
     meta = _require_meta(provider)
     async with app_state.database.session() as session:
         await ProviderCredentialRepository(session).delete(provider)
+        routing = RoutingSettingsRepository(session)
+        if await routing.get_active_provider() == provider:
+            await routing.set_active_provider(None)
 
     await app_state.reload_providers()
     return _info(meta, app_state, None)

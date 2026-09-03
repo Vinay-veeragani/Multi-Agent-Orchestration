@@ -106,6 +106,26 @@ class ProviderInfo(BaseModel):
     models: tuple[ModelOption, ...] = ()
 
 
+class ProvidersPageResponse(BaseModel):
+    """Body for ``GET /providers``.
+
+    ``active_provider`` is the single source of truth for "which provider do
+    agents actually use" -- ``None`` means automatic, cost-aware routing
+    across every connected provider.
+    """
+
+    active_provider: str | None = None
+    providers: tuple[ProviderInfo, ...] = ()
+
+
+class SetActiveProviderRequest(BaseModel):
+    """Body for ``PUT /providers/active``. ``provider: null`` clears it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str | None = None
+
+
 class UpdateProviderRequest(BaseModel):
     """Body for ``PUT /providers/{provider}``.
 

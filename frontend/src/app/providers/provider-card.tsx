@@ -13,7 +13,13 @@ import {
   saveProviderAction,
 } from "./actions";
 
-export function ProviderCard({ provider }: { provider: ProviderInfo }) {
+export function ProviderCard({
+  provider,
+  isActive,
+}: {
+  provider: ProviderInfo;
+  isActive: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [saveState, saveAction, saving] = useActionState(
     saveProviderAction.bind(null, provider.provider),
@@ -40,6 +46,7 @@ export function ProviderCard({ provider }: { provider: ProviderInfo }) {
             </div>
           )}
         </div>
+        {isActive && <Badge variant="primary">Active</Badge>}
         <Badge variant={provider.configured ? "success" : "neutral"}>
           {provider.configured ? "Connected" : "Not connected"}
         </Badge>
@@ -114,8 +121,8 @@ export function ProviderCard({ provider }: { provider: ProviderInfo }) {
                       ))}
                     </select>
                     <p className="mt-1 text-[10px] text-subtle-foreground">
-                      Picking a model forces every agent (and the supervisor) onto it. Leave on
-                      Auto to let the router choose per call.
+                      Used only while this is the active provider (set above the list). Auto lets
+                      the router pick a model from this provider per call.
                     </p>
                   </div>
                 )}

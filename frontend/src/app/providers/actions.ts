@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ApiError, deleteProviderCredential, updateProvider } from "@/lib/api";
+import { ApiError, deleteProviderCredential, setActiveProvider, updateProvider } from "@/lib/api";
 
 export interface ProviderFormState {
   status: "idle" | "error" | "success";
@@ -36,6 +36,25 @@ export async function saveProviderAction(
 
   revalidatePath("/providers");
   return { status: "success", message: "Saved." };
+}
+
+export async function setActiveProviderAction(
+  _previous: ProviderFormState,
+  formData: FormData,
+): Promise<ProviderFormState> {
+  const provider = String(formData.get("active_provider") ?? "").trim();
+
+  try {
+    await setActiveProvider(provider || null);
+  } catch (error) {
+    return {
+      status: "error",
+      message: error instanceof ApiError ? error.message : "Could not change the active provider.",
+    };
+  }
+
+  revalidatePath("/providers");
+  return { status: "success" };
 }
 
 export async function removeProviderAction(provider: string): Promise<ProviderFormState> {
