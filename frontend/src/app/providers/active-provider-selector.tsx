@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState } from "react";
 import type { ProviderInfo } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { setActiveProviderAction } from "./actions";
@@ -20,6 +20,22 @@ export function ActiveProviderSelector({
   const formRef = useRef<HTMLFormElement>(null);
   const connected = providers.filter((p) => p.configured);
 
+  // `activeProvider` is server-owned truth: this component stays mounted
+  // across the server action's revalidation (only its props change), so a
+  // plain `defaultValue` below would only ever reflect whatever was true on
+  // first mount -- selecting a provider would submit correctly but the
+  // dropdown itself would silently revert to "Automatic" on every render
+  // after. Adjusting local state during render when the prop has changed
+  // (React's own recommended pattern for this -- see "Adjusting state when a
+  // prop changes" in the React docs) is what makes the select track the
+  // confirmed server value, without the extra render pass an effect would add.
+  const [value, setValue] = useState(activeProvider ?? "");
+  const [syncedFor, setSyncedFor] = useState(activeProvider);
+  if (activeProvider !== syncedFor) {
+    setSyncedFor(activeProvider);
+    setValue(activeProvider ?? "");
+  }
+
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -38,9 +54,12 @@ export function ActiveProviderSelector({
         >
           <select
             name="active_provider"
-            defaultValue={activeProvider ?? ""}
+            value={value}
             disabled={pending}
-            onChange={() => formRef.current?.requestSubmit()}
+            onChange={(event) => {
+              setValue(event.target.value);
+              formRef.current?.requestSubmit();
+            }}
             className="h-8 rounded-md border border-border-strong bg-black/20 px-2 text-sm text-foreground outline-none focus:border-primary"
           >
             <option value="">Automatic</option>
