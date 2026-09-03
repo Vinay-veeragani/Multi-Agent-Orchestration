@@ -2,15 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { ApiError, deleteProviderCredential, setActiveProvider, updateProvider } from "@/lib/api";
-
-export interface ProviderFormState {
-  status: "idle" | "error" | "success";
-  message?: string;
-}
-
-const initialState: ProviderFormState = { status: "idle" };
-
-export { initialState as providerFormInitialState };
+import type { ProviderFormState } from "./form-state";
 
 export async function saveProviderAction(
   provider: string,

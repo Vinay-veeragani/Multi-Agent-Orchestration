@@ -7,11 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import {
-  providerFormInitialState,
-  removeProviderAction,
-  saveProviderAction,
-} from "./actions";
+import { removeProviderAction, saveProviderAction } from "./actions";
+import { providerFormInitialState } from "./form-state";
 
 export function ProviderCard({
   provider,

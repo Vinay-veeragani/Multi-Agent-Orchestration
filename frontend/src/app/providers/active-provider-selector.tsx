@@ -3,7 +3,8 @@
 import { useActionState, useRef } from "react";
 import type { ProviderInfo } from "@/lib/api";
 import { Card } from "@/components/ui/card";
-import { providerFormInitialState, setActiveProviderAction } from "./actions";
+import { setActiveProviderAction } from "./actions";
+import { providerFormInitialState } from "./form-state";
 
 export function ActiveProviderSelector({
   providers,
