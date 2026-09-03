@@ -9,6 +9,7 @@ from orchestration.api.routes import (
     approvals,
     benchmarks,
     executions,
+    observability,
     providers,
     system,
     workflows,
@@ -22,5 +23,6 @@ api_router.include_router(executions.router)
 api_router.include_router(benchmarks.router)
 api_router.include_router(providers.router)
 api_router.include_router(approvals.router)
+api_router.include_router(observability.router)
 
 __all__ = ["api_router"]

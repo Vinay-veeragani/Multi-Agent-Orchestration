@@ -486,4 +486,53 @@ export function deleteProviderCredential(provider: string): Promise<ProviderInfo
   });
 }
 
+export interface ExecutionTotals {
+  total_executions: number;
+  total_cost_usd: number;
+  total_tokens: number;
+  by_status: Record<string, number>;
+}
+
+export interface AgentObservabilityStats {
+  agent_id: string;
+  invocations: number;
+  succeeded: number;
+  avg_duration_seconds: number;
+  total_tokens: number;
+  total_cost_usd: number;
+}
+
+export interface ToolObservabilityStats {
+  tool: string;
+  invocations: number;
+  succeeded: number;
+  denied: number;
+  required_approval: number;
+}
+
+export interface RecentIssue {
+  id: string;
+  execution_id: string;
+  type: string;
+  severity: string;
+  node_id: string | null;
+  agent_id: string | null;
+  tool: string | null;
+  message: string;
+  created_at: string;
+}
+
+export interface ObservabilitySummary {
+  totals: ExecutionTotals;
+  agents: AgentObservabilityStats[];
+  tools: ToolObservabilityStats[];
+  recent_issues: RecentIssue[];
+}
+
+// Database-backed, not the live Prometheus counters at GET /metrics (those
+// reset on every process restart) -- see the backend route's own docstring.
+export function getObservabilitySummary(): Promise<ObservabilitySummary> {
+  return request<ObservabilitySummary>("/observability");
+}
+
 export { config as orchestratorConfig, ApiError };

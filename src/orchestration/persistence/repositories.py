@@ -27,7 +27,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1236,3 +1236,130 @@ class RoutingSettingsRepository:
             )
         )
         await self._session.execute(statement)
+
+
+class ObservabilityRepository:
+    """Read-only aggregates over durable history, for the Observability page.
+
+    Deliberately not the Prometheus counters `orchestration.observability.
+    metrics` exposes at `/metrics`: those live in process memory and reset on
+    every restart, which would make a dashboard built on them look broken
+    every time this reference deployment restarts (which is often, in
+    development). Everything here comes from what already durably persists.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def execution_totals(self) -> JsonDict:
+        row = (
+            await self._session.execute(
+                select(
+                    func.count(ExecutionRow.id),
+                    func.coalesce(func.sum(ExecutionRow.cost_usd), 0.0),
+                    func.coalesce(func.sum(ExecutionRow.total_tokens), 0),
+                )
+            )
+        ).one()
+        by_status_rows = (
+            await self._session.execute(
+                select(ExecutionRow.status, func.count(ExecutionRow.id)).group_by(
+                    ExecutionRow.status
+                )
+            )
+        ).all()
+        return {
+            "total_executions": row[0],
+            "total_cost_usd": float(row[1]),
+            "total_tokens": int(row[2]),
+            "by_status": {status: count for status, count in by_status_rows},
+        }
+
+    async def agent_stats(self, *, limit: int = 50) -> list[JsonDict]:
+        succeeded = case((AgentInvocationRow.status == "succeeded", 1), else_=0)
+        statement = (
+            select(
+                AgentInvocationRow.agent_id,
+                func.count(AgentInvocationRow.id),
+                func.sum(succeeded),
+                func.coalesce(func.avg(AgentInvocationRow.duration_seconds), 0.0),
+                func.coalesce(
+                    func.sum(AgentInvocationRow.input_tokens + AgentInvocationRow.output_tokens), 0
+                ),
+                func.coalesce(func.sum(AgentInvocationRow.cost_usd), 0.0),
+            )
+            .group_by(AgentInvocationRow.agent_id)
+            .order_by(func.count(AgentInvocationRow.id).desc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(statement)).all()
+        return [
+            {
+                "agent_id": agent_id,
+                "invocations": invocations,
+                "succeeded": succeeded_count,
+                "avg_duration_seconds": float(avg_duration),
+                "total_tokens": int(total_tokens),
+                "total_cost_usd": float(total_cost),
+            }
+            for agent_id, invocations, succeeded_count, avg_duration, total_tokens, total_cost in rows
+        ]
+
+    async def tool_stats(self, *, limit: int = 50) -> list[JsonDict]:
+        succeeded = case((ToolInvocationRow.status == "succeeded", 1), else_=0)
+        denied = case((ToolInvocationRow.policy_effect == "deny", 1), else_=0)
+        approval = case((ToolInvocationRow.policy_effect == "require_approval", 1), else_=0)
+        statement = (
+            select(
+                ToolInvocationRow.tool,
+                func.count(ToolInvocationRow.id),
+                func.sum(succeeded),
+                func.sum(denied),
+                func.sum(approval),
+            )
+            .group_by(ToolInvocationRow.tool)
+            .order_by(func.count(ToolInvocationRow.id).desc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(statement)).all()
+        return [
+            {
+                "tool": tool,
+                "invocations": invocations,
+                "succeeded": succeeded_count,
+                "denied": denied_count,
+                "required_approval": approval_count,
+            }
+            for tool, invocations, succeeded_count, denied_count, approval_count in rows
+        ]
+
+    async def recent_issues(self, *, limit: int = 20) -> list[JsonDict]:
+        """The most recent warning/error-severity events, across every execution.
+
+        Severity, not a hardcoded event-type list: it is the field this
+        engine already assigns at emission time specifically to mark
+        something worth a human's attention, so filtering on it stays
+        correct as new event types are added rather than silently missing
+        them.
+        """
+        statement = (
+            select(ExecutionEventRow)
+            .where(ExecutionEventRow.severity.in_(("warning", "error")))
+            .order_by(ExecutionEventRow.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(statement)).scalars().all()
+        return [
+            {
+                "id": r.id,
+                "execution_id": r.execution_id,
+                "type": r.type,
+                "severity": r.severity,
+                "node_id": r.node_id,
+                "agent_id": r.agent_id,
+                "tool": r.tool,
+                "message": r.message,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]

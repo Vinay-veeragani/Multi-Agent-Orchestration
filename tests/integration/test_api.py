@@ -29,7 +29,7 @@ from orchestration.domain.base import utc_now
 from orchestration.domain.enums import ExecutionStatus, NodeStatus
 from orchestration.domain.evaluation import ArmMetrics, BenchmarkReport
 from orchestration.llm.factory import LLMClient
-from orchestration.llm.mock import MockProvider, MockRule, agent_output, routing_decision
+from orchestration.llm.mock import Fault, MockProvider, MockRule, agent_output, routing_decision
 from orchestration.persistence.database import Database
 from orchestration.persistence.repositories import BenchmarkRepository
 
@@ -818,6 +818,123 @@ class TestInvocations:
         assert invocations[0]["agent_id"] == "data_agent"
         assert invocations[0]["status"] == "succeeded"
         assert invocations[0]["policy_effect"] == "allow"
+
+
+class TestObservability:
+    """`GET /observability` -- durable, database-backed aggregates.
+
+    Deliberately not built on the live Prometheus counters `GET /metrics`
+    exposes -- see `ObservabilityRepository`'s own docstring. Reuses
+    `TestInvocations`' exact scenarios so the aggregates under test are
+    known, real rows, not synthetic ones this test class invents on its own.
+    """
+
+    async def test_totals_reflect_a_real_finished_execution(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        provider = MockProvider([MockRule(name="agent", responses=(agent_output("done"),))])
+        async with _client(database, redis_coordinator, provider) as client:
+            created = await client.post("/executions", json={"task": "observe me"})
+            execution_id = created.json()["execution_id"]
+            await _wait_for_terminal(client, execution_id)
+
+            response = await client.get("/observability")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["totals"]["total_executions"] >= 1
+        assert sum(body["totals"]["by_status"].values()) == body["totals"]["total_executions"]
+
+    async def test_agent_and_tool_stats_come_from_real_invocations(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        workflow = {
+            "name": "observability-tool-stats",
+            "nodes": [
+                {"id": "a", "kind": "agent", "agent_id": "data_agent", "output_key": "a"},
+                {"id": "b", "kind": "terminal"},
+            ],
+            "edges": [{"source": "a", "target": "b"}],
+        }
+        provider = MockProvider(
+            [
+                MockRule(
+                    name="agent",
+                    responses=(
+                        json.dumps(
+                            {
+                                "tool_calls": [
+                                    {"name": "calculator", "arguments": {"expression": "2+2"}}
+                                ]
+                            }
+                        ),
+                        agent_output("computed 2+2"),
+                    ),
+                )
+            ]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created_workflow = await client.post("/workflows", json=workflow)
+            created = await client.post(
+                "/executions",
+                json={"task": "check observability stats", "workflow_id": created_workflow.json()["id"]},
+            )
+            await _wait_for_terminal(client, created.json()["execution_id"])
+
+            response = await client.get("/observability")
+
+        body = response.json()
+        agent_row = next(a for a in body["agents"] if a["agent_id"] == "data_agent")
+        assert agent_row["invocations"] >= 1
+        assert agent_row["succeeded"] >= 1
+        tool_row = next(t for t in body["tools"] if t["tool"] == "calculator")
+        assert tool_row["invocations"] >= 1
+        assert tool_row["succeeded"] >= 1
+        assert tool_row["denied"] == 0
+
+    async def test_recent_issues_surfaces_a_real_failure(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        workflow = {
+            "name": "observability-failure",
+            "nodes": [
+                {"id": "a", "kind": "agent", "agent_id": "data_agent", "output_key": "a"},
+                {"id": "b", "kind": "terminal"},
+            ],
+            "edges": [{"source": "a", "target": "b"}],
+        }
+        # A fault confined to attempt 1 alone gets silently absorbed by
+        # LLMClient's own internal retry (a second, successful raw call) --
+        # see this session's earlier discovery of the same thing. Failing
+        # every attempt is what's actually needed to exhaust every retry
+        # layer and produce a real, permanent node failure.
+        provider = MockProvider(
+            [MockRule(name="agent", fault=Fault("timeout", attempts=tuple(range(1, 100))))]
+        )
+        async with _client(database, redis_coordinator, provider) as client:
+            created_workflow = await client.post("/workflows", json=workflow)
+            created = await client.post(
+                "/executions",
+                json={"task": "force a failure", "workflow_id": created_workflow.json()["id"]},
+            )
+            await _wait_for_terminal(client, created.json()["execution_id"])
+
+            response = await client.get("/observability")
+
+        issues = response.json()["recent_issues"]
+        assert any(issue["type"] == "retry_exhausted" for issue in issues)
+
+    async def test_with_nothing_run_totals_are_all_zero(
+        self, database: Database, redis_coordinator: RedisCoordinator
+    ) -> None:
+        async with _client(database, redis_coordinator, MockProvider()) as client:
+            response = await client.get("/observability")
+        body = response.json()
+        assert body["totals"]["total_executions"] == 0
+        assert body["totals"]["total_cost_usd"] == 0.0
+        assert body["agents"] == []
+        assert body["tools"] == []
+        assert body["recent_issues"] == []
 
 
 class TestEventStream:

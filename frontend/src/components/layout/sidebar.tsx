@@ -47,7 +47,7 @@ const SECTIONS: NavSection[] = [
     label: "Operations",
     items: [
       { label: "Providers", href: "/providers", icon: Key },
-      { label: "Observability", icon: Server },
+      { label: "Observability", href: "/observability", icon: Server },
     ],
   },
   {

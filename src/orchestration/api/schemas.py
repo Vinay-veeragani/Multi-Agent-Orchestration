@@ -168,6 +168,57 @@ class PendingApprovalItem(BaseModel):
     expires_at: datetime | None = None
 
 
+class ExecutionTotals(BaseModel):
+    """Deployment-wide execution counts, for the Observability page."""
+
+    total_executions: int
+    total_cost_usd: float
+    total_tokens: int
+    by_status: dict[str, int]
+
+
+class AgentObservabilityStats(BaseModel):
+    agent_id: str
+    invocations: int
+    succeeded: int
+    avg_duration_seconds: float
+    total_tokens: int
+    total_cost_usd: float
+
+
+class ToolObservabilityStats(BaseModel):
+    tool: str
+    invocations: int
+    succeeded: int
+    denied: int
+    required_approval: int
+
+
+class RecentIssue(BaseModel):
+    id: str
+    execution_id: str
+    type: str
+    severity: str
+    node_id: str | None = None
+    agent_id: str | None = None
+    tool: str | None = None
+    message: str
+    created_at: datetime
+
+
+class ObservabilitySummary(BaseModel):
+    """Body for ``GET /observability``. Every field is durable-history-backed.
+
+    Deliberately not built on the Prometheus counters at ``GET /metrics`` --
+    see ``ObservabilityRepository``'s own docstring for why.
+    """
+
+    totals: ExecutionTotals
+    agents: tuple[AgentObservabilityStats, ...]
+    tools: tuple[ToolObservabilityStats, ...]
+    recent_issues: tuple[RecentIssue, ...]
+
+
 class HealthResponse(BaseModel):
     status: str
     database: bool
