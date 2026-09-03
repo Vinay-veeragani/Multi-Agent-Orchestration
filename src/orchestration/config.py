@@ -29,6 +29,7 @@ class ProviderName(StrEnum):
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     OLLAMA = "ollama"
+    GROQ = "groq"
 
 
 class Settings(BaseSettings):
@@ -104,6 +105,16 @@ class Settings(BaseSettings):
     #: Ollama server that was never actually asked for.
     ollama_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
+    #: Groq speaks the same OpenAI-compatible /chat/completions shape as
+    #: OpenAI/Ollama/vLLM, so it reuses OpenAICompatibleProvider with a
+    #: different base URL rather than a dedicated adapter.
+    groq_api_key: SecretStr | None = None
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    #: When set, every routing decision (supervisor included) returns this
+    #: model regardless of cost/capability criteria -- see
+    #: ModelRouter.select's force_model_key. Unset by default: the router's
+    #: own cost-aware selection is otherwise left in charge.
+    pinned_model_key: str | None = None
     llm_timeout_seconds: float = Field(default=60.0, gt=0)
     llm_max_retries: int = Field(default=3, ge=0)
 

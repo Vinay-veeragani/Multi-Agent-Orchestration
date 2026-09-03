@@ -327,6 +327,31 @@ class TestWebSearch:
         result = await tool.invoke({"query": "widget"}, context)
         assert result["result_count"] == 1
 
+    async def test_accepts_parameters_a_model_invents_unprompted(
+        self, context: ToolContext
+    ) -> None:
+        """Groq's gpt-oss-120b calls this tool with topn/recency_days/source it
+        was never told about; a stricter provider rejects the call outright if
+        the schema does not declare them (`additionalProperties: false`).
+        Accepting -- not necessarily acting on -- them keeps the call from
+        failing before it ever reaches `run`."""
+        result = await WebSearchTool().invoke(
+            {
+                "query": "CRM pricing vendors",
+                "topn": 3,
+                "recency_days": 30,
+                "source": "news",
+            },
+            context,
+        )
+        assert result["result_count"] <= 3
+
+    async def test_topn_is_an_alias_for_max_results(self, context: ToolContext) -> None:
+        result = await WebSearchTool().invoke(
+            {"query": "CRM pricing vendors", "topn": 1}, context
+        )
+        assert len(result["results"]) <= 1
+
 
 # ---------------------------------------------------------------------------
 # filesystem

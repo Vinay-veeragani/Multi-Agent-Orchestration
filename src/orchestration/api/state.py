@@ -100,7 +100,11 @@ async def build_app_state(
     available = configured_providers(resolved)
     mock_only = tuple(available) == ("mock",)
     llm = llm or LLMClient()
-    router = build_default_router(mock_only=mock_only, configured_providers=available)
+    router = build_default_router(
+        mock_only=mock_only,
+        configured_providers=available,
+        force_model_key=resolved.pinned_model_key,
+    )
 
     async with database.session() as session:
         agent_repo = AgentRepository(session)

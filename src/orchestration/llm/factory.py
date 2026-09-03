@@ -85,6 +85,12 @@ def build_provider_builders(settings: Settings) -> dict[Provider, ProviderBuilde
             base_url=settings.ollama_base_url,
             timeout_seconds=max(settings.llm_timeout_seconds, 120.0),
         ),
+        Provider.GROQ: lambda: OpenAICompatibleProvider(
+            base_url=settings.groq_base_url,
+            api_key=(settings.groq_api_key.get_secret_value() if settings.groq_api_key else None),
+            timeout_seconds=settings.llm_timeout_seconds,
+            provider=Provider.GROQ,
+        ),
     }
 
 
@@ -105,6 +111,8 @@ def configured_providers(settings: Settings) -> tuple[str, ...]:
         available.append("gemini")
     if settings.ollama_enabled:
         available.append("ollama")
+    if settings.groq_api_key:
+        available.append("groq")
     return tuple(available)
 
 

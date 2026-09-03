@@ -170,6 +170,20 @@ class WebSearchTool(Tool):
             {
                 "query": {"type": "string", "minLength": 1, "maxLength": 500},
                 "max_results": {"type": "integer", "minimum": 1, "maximum": 20},
+                # `additionalProperties: false` (object_schema's default) means a
+                # provider that validates tool-call arguments strictly -- Groq
+                # does, for at least gpt-oss-120b -- rejects the call outright if
+                # the model includes a parameter this schema does not declare.
+                # These three are exactly what that model tends to invent
+                # unprompted for a search tool; declaring them keeps the call
+                # from failing before it ever reaches `run`. `recency_days` and
+                # `source` are accepted but not applied -- this is a fixed
+                # offline corpus (see the class docstring), which carries no
+                # publish date or source metadata to filter by, and pretending
+                # otherwise would misrepresent what the result actually is.
+                "topn": {"type": "integer", "minimum": 1, "maximum": 20},
+                "recency_days": {"type": "integer"},
+                "source": {"type": "string"},
             },
             required=["query"],
         ),
@@ -185,7 +199,9 @@ class WebSearchTool(Tool):
 
     async def run(self, arguments: JsonDict, context: ToolContext) -> JsonDict:
         query = str(arguments["query"])
-        limit = int(arguments.get("max_results", 5))
+        # `topn` is the same idea as `max_results` under a different name a
+        # model sometimes reaches for; honour whichever was actually given.
+        limit = int(arguments.get("max_results") or arguments.get("topn") or 5)
         results = self._match(query)[:limit]
         return {
             "query": query,

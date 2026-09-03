@@ -55,7 +55,13 @@ from orchestration.llm.providers import (
     _parse_openai_tool_calls,
     ollama_provider,
 )
-from orchestration.models.catalog import LLAMA_LOCAL, MOCK_FAST, MOCK_SMART, build_catalog
+from orchestration.models.catalog import (
+    GROQ_GPT_OSS_120B,
+    LLAMA_LOCAL,
+    MOCK_FAST,
+    MOCK_SMART,
+    build_catalog,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -645,6 +651,51 @@ class TestOpenAIAdapter:
         assert response.usage.input_tokens == 12
         assert response.usage.output_tokens == 4
 
+    def test_groq_missing_key_fails_with_an_actionable_message(self) -> None:
+        """Groq reuses OpenAICompatibleProvider, so the hint must name Groq's
+        own env var rather than a copy-pasted OpenAI one."""
+        adapter = OpenAICompatibleProvider(provider=Provider.GROQ, api_key=None)
+        with pytest.raises(ConfigurationError, match="requires an API key") as info:
+            adapter._auth_headers()
+        assert "ORCH_GROQ_API_KEY" in info.value.context["hint"]
+
+    async def test_groq_round_trip_against_a_real_openai_compatible_endpoint(self) -> None:
+        """Groq has no local server to hit in CI, so -- same approach as the
+        Ollama test above -- this proves the wiring against a fake server
+        speaking Groq's actual `/openai/v1/chat/completions` shape, swapping
+        only the transport."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/openai/v1/chat/completions"
+            assert request.headers["Authorization"] == "Bearer gsk-test"
+            body = json.loads(request.content)
+            assert body["model"] == "openai/gpt-oss-120b"
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "hello from groq"}}],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 3},
+                },
+            )
+
+        adapter = OpenAICompatibleProvider(
+            base_url="https://api.groq.com/openai/v1",
+            api_key="gsk-test",
+            provider=Provider.GROQ,
+        )
+        adapter._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url=adapter._base_url
+        )
+        try:
+            response = await adapter.complete(_request(GROQ_GPT_OSS_120B, "hi"))
+        finally:
+            await adapter.aclose()
+
+        assert response.content == "hello from groq"
+        assert response.provider is Provider.GROQ
+        assert response.usage.input_tokens == 9
+        assert response.usage.output_tokens == 3
+
     def test_tool_calls_are_parsed(self) -> None:
         calls = _parse_openai_tool_calls(
             [
@@ -846,6 +897,29 @@ class TestModelRouter:
         router = ModelRouter(build_catalog())
         with pytest.raises(NotFoundError):
             router.select(RoutingCriteria(pinned_model="not-a-model"))
+
+    def test_forced_model_overrides_every_criterion(self) -> None:
+        """An operator-forced model wins even over cost/capability preferences."""
+        from orchestration.routing.model_router import ModelRouter
+
+        router = ModelRouter(build_catalog(), force_model_key="claude-opus-4-5")
+        selection = router.select(RoutingCriteria(prefer="cheapest"))
+        assert selection.model.key == "claude-opus-4-5"
+        assert "forced" in selection.reason
+
+    def test_forced_model_overrides_an_agent_s_own_pin(self) -> None:
+        from orchestration.routing.model_router import ModelRouter
+
+        router = ModelRouter(build_catalog(), force_model_key="claude-opus-4-5")
+        selection = router.select(RoutingCriteria(pinned_model="gpt-4o-mini"))
+        assert selection.model.key == "claude-opus-4-5"
+
+    def test_forcing_an_unknown_model_fails_fast_at_construction(self) -> None:
+        from orchestration.errors import NotFoundError
+        from orchestration.routing.model_router import ModelRouter
+
+        with pytest.raises(NotFoundError):
+            ModelRouter(build_catalog(), force_model_key="not-a-model")
 
     def test_cheapest_preference(self) -> None:
         from orchestration.routing.model_router import ModelRouter

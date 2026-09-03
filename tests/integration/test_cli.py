@@ -88,7 +88,9 @@ def _approval_provider() -> MockProvider:
 async def _serve(
     database: Database, redis_coordinator: RedisCoordinator, provider: MockProvider
 ) -> AsyncIterator[str]:
-    settings = Settings(api_require_auth=False)
+    # `_env_file=None`: keep this isolated from a developer's real `.env`
+    # (see the same note in tests/integration/test_api.py's `_client`).
+    settings = Settings(_env_file=None, api_require_auth=False)
     app = create_app(
         settings,
         llm=LLMClient.mock(provider, sleep=_no_sleep),

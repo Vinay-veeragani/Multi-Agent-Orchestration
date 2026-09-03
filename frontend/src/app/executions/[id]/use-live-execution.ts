@@ -4,8 +4,6 @@ import { useEffect, useRef } from "react";
 import type { ExecutionEvent } from "@/lib/api";
 import { useExecutionStore } from "@/lib/execution-store";
 
-const TERMINAL_TYPES = new Set(["execution_completed", "execution_failed", "execution_cancelled"]);
-
 // Exponential backoff, capped -- a dropped connection retries quickly at
 // first (a network blip) and settles into a slow poll rather than hammering
 // the API if the outage is long-lived.
@@ -19,14 +17,23 @@ const MAX_RECONNECT_DELAY_MS = 15000;
  * graph, inspector) reacts to the same live event stream without each
  * opening its own connection.
  *
- * Reconnects itself on a dropped connection rather than relying on the
- * browser's built-in EventSource retry: a native retry replays this
- * execution's *entire* Redis-backed backlog every time (the proxy's resume
- * point is a `after_id` query parameter, which a browser reconnect has no way
- * to set), which is wasteful for a long-running execution and would still
- * leave the UI showing a stale "live" dot while it churns through history.
- * Tracking the last-seen SSE id here and reopening with `?after_id=` instead
- * resumes exactly where the stream left off.
+ * Deliberately does not decide "this execution is over" from any event's
+ * `type` -- a dynamic execution's supervisor can recover from what the
+ * engine itself emits as EXECUTION_FAILED (a round draining with a blocking
+ * failure, not the run ending; see the backend's `_looks_finished`), so an
+ * `execution_failed` message arriving over the wire does not mean the stream
+ * should close. The backend already withholds the *connection close* until
+ * it has confirmed the execution is genuinely terminal; this hook mirrors
+ * that by checking real status (`/api/executions/{id}/status`) whenever the
+ * connection drops, rather than pattern-matching event types itself.
+ *
+ * Also reconnects itself instead of relying on the browser's built-in
+ * EventSource retry: a native retry replays this execution's *entire*
+ * Redis-backed backlog every time (the proxy's resume point is an `after_id`
+ * query parameter, which a browser reconnect has no way to set), which is
+ * wasteful for a long-running execution. Tracking the last-seen SSE id here
+ * and reopening with `?after_id=` instead resumes exactly where the stream
+ * left off.
  */
 export function useLiveExecution(executionId: string, initialEvents: ExecutionEvent[], isTerminal: boolean) {
   const seed = useExecutionStore((s) => s.seed);
@@ -57,7 +64,30 @@ export function useLiveExecution(executionId: string, initialEvents: ExecutionEv
     let attempt = 0;
     let lastEventId = "";
 
-    function scheduleReconnect() {
+    async function handleDrop() {
+      source?.close();
+      if (stopped) return;
+
+      // Ambiguous by construction: a graceful server-side stream end (the
+      // execution genuinely finished) and a real network drop both surface
+      // as this same error. Ask directly rather than guess.
+      try {
+        const response = await fetch(`/api/executions/${executionId}/status`, {
+          cache: "no-store",
+        });
+        if (response.ok) {
+          const body = (await response.json()) as { isTerminal: boolean };
+          if (body.isTerminal) {
+            stopped = true;
+            setConnection("closed");
+            return;
+          }
+        }
+      } catch {
+        // Status check itself failed (e.g. this app's own server is down) --
+        // fall through to the ordinary reconnect/backoff path below.
+      }
+
       if (stopped) return;
       setConnection("reconnecting");
       const delay = RECONNECT_DELAYS_MS[attempt] ?? MAX_RECONNECT_DELAY_MS;
@@ -79,22 +109,14 @@ export function useLiveExecution(executionId: string, initialEvents: ExecutionEv
       };
 
       source.onerror = () => {
-        source?.close();
-        scheduleReconnect();
+        void handleDrop();
       };
 
-      function onMessage(raw: MessageEvent) {
+      source.onmessage = (raw: MessageEvent) => {
         if (raw.lastEventId) lastEventId = raw.lastEventId;
         const event = JSON.parse(raw.data) as ExecutionEvent;
         push(event);
-        if (TERMINAL_TYPES.has(event.type)) {
-          stopped = true;
-          setConnection("closed");
-          source?.close();
-        }
-      }
-      source.addEventListener("message", onMessage);
-      for (const terminal of TERMINAL_TYPES) source.addEventListener(terminal, onMessage);
+      };
     }
 
     connect();

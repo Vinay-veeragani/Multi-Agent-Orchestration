@@ -109,6 +109,23 @@ export interface BudgetUsage {
   llm_calls: number;
 }
 
+// Mirrors orchestration.domain.enums._TERMINAL_EXECUTION_STATUSES -- kept in
+// one place after budget_exceeded/timed_out were found missing from an
+// inline ["succeeded", "failed", "cancelled"] check, which made the frontend
+// treat an already-finished (budget-exceeded) execution as still live and
+// try to open a pointless SSE connection to it.
+const TERMINAL_EXECUTION_STATUSES = new Set([
+  "succeeded",
+  "failed",
+  "cancelled",
+  "budget_exceeded",
+  "timed_out",
+]);
+
+export function isTerminalStatus(status: string): boolean {
+  return TERMINAL_EXECUTION_STATUSES.has(status);
+}
+
 export interface Budget {
   max_cost_usd: number | null;
   max_tokens: number | null;

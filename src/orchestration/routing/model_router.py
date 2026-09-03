@@ -89,10 +89,22 @@ class ModelRouter:
         *,
         default_model_key: str | None = None,
         allowed_providers: Sequence[str] | None = None,
+        force_model_key: str | None = None,
     ) -> None:
         self._catalog = catalog
         self._allowed = frozenset(allowed_providers) if allowed_providers else None
         self._default_key = default_model_key or self._pick_initial_default()
+        #: Operator override: every call, supervisor decisions included,
+        #: returns this model regardless of capability/cost criteria. Distinct
+        #: from `default_model_key` (an unused-by-selection fallback) -- this
+        #: one actually participates in `select()`, deliberately bypassing the
+        #: cost-aware heuristics below it so a deployment that wants a specific
+        #: real model used everywhere (rather than the router silently
+        #: preferring the free mock model whenever it is capable enough) gets
+        #: exactly that.
+        self._force_model_key = force_model_key
+        if force_model_key is not None:
+            self._catalog.get(force_model_key)  # fail fast if misconfigured
 
     def _pick_initial_default(self) -> str:
         candidates = self._available()
@@ -144,6 +156,15 @@ class ModelRouter:
                 routing request is a configuration bug, and it should say so.
         """
         criteria = criteria or RoutingCriteria()
+
+        if self._force_model_key:
+            model = self._catalog.get(self._force_model_key)
+            return ModelSelection(
+                model=model,
+                reason=f"operator-forced to {model.key!r} (ORCH_PINNED_MODEL_KEY)",
+                considered=(model.key,),
+                criteria=criteria,
+            )
 
         if criteria.pinned_model:
             model = self._catalog.try_get(criteria.pinned_model)
@@ -309,7 +330,10 @@ class ModelRouter:
 
 
 def build_default_router(
-    *, mock_only: bool = True, configured_providers: Sequence[str] | None = None
+    *,
+    mock_only: bool = True,
+    configured_providers: Sequence[str] | None = None,
+    force_model_key: str | None = None,
 ) -> ModelRouter:
     """Construct a router.
 
@@ -323,4 +347,4 @@ def build_default_router(
     providers = (
         list(configured_providers) if configured_providers else (["mock"] if mock_only else None)
     )
-    return ModelRouter(catalog, allowed_providers=providers)
+    return ModelRouter(catalog, allowed_providers=providers, force_model_key=force_model_key)

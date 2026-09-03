@@ -24,7 +24,7 @@ from orchestration.api.state import AppState
 from orchestration.domain.approval import ApprovalRequest
 from orchestration.domain.base import JsonDict, new_id
 from orchestration.domain.budget import Budget
-from orchestration.domain.enums import EventType, ExecutionStatus
+from orchestration.domain.enums import CheckpointReason, EventType, ExecutionStatus
 from orchestration.domain.events import EventFilter, ExecutionEvent
 from orchestration.domain.execution import ExecutionState
 from orchestration.domain.workflow import Task, Workflow
@@ -354,7 +354,56 @@ def _format_sse(entry: dict[str, str]) -> str:
         "created_at": entry.get("created_at", ""),
     }
     stream_id = entry.get("_id", "")
-    return f"id: {stream_id}\nevent: {event_type or 'message'}\ndata: {json.dumps(data)}\n\n"
+    # Deliberately generic ("message", SSE's default -- no `event:` line): the
+    # client already reads `data.type` to tell events apart (see
+    # ExecutionEvent.type), so a per-type SSE event *name* here would be
+    # redundant framing a client must separately know to listen for. Naming it
+    # `node_started`/`agent_invoked`/etc. instead would silently orphan any
+    # event type the client did not think to register a listener for -- which
+    # is exactly what happened before this comment existed.
+    return f"id: {stream_id}\ndata: {json.dumps(data)}\n\n"
+
+
+def _might_have_ended(entry: dict[str, str]) -> bool:
+    """Whether this event is worth a status re-check at all.
+
+    Two shapes of dynamic-execution ending never share one event type:
+    ``WorkflowExecutor._finish`` emits EXECUTION_COMPLETED/FAILED when a
+    round's graph drains (sometimes a false alarm -- see `_looks_finished`),
+    while the supervisor's own RESPOND_DIRECTLY/FINALIZE/FAIL decisions end
+    the run without emitting either, only a checkpoint (which always emits
+    CHECKPOINT_CREATED). Checking both keeps either ending path from leaving
+    the stream open forever with nothing left to tell the client it's done.
+    """
+    if entry.get("type") in _TERMINAL_STREAM_EVENT_VALUES:
+        return True
+    if entry.get("type") != EventType.CHECKPOINT_CREATED.value:
+        return False
+    try:
+        payload = json.loads(entry.get("payload") or "{}")
+    except json.JSONDecodeError:
+        return False
+    return payload.get("reason") == CheckpointReason.EXECUTION_FINALIZED.value
+
+
+async def _looks_finished(execution_id: str, app_state: AppState, entry: dict[str, str]) -> bool:
+    """Whether an ending-shaped event actually ended the execution.
+
+    A dynamic execution compiles each supervisor turn to a subgraph and runs it
+    through the same :class:`~orchestration.workflow.executor.WorkflowExecutor`
+    a static workflow uses; that executor emits ``EXECUTION_FAILED`` (and marks
+    the state FAILED) the moment a *round* drains with a blocking failure, even
+    though :meth:`~orchestration.runtime.orchestrator.ExecutionOrchestrator.
+    _recover_from_round_drain` immediately undoes it and lets the supervisor
+    replan -- see that method's own docstring: "a terminal status the executor
+    imposed on a round, not a run". Trusting the event type alone would end the
+    stream on a failure the execution itself already recovered from, so this
+    re-checks the persisted status instead of assuming the event type settles it.
+    """
+    if not _might_have_ended(entry):
+        return False
+    state = await _load_state(execution_id, app_state)
+    return state.status.is_terminal
 
 
 async def _stream_events(
@@ -362,16 +411,15 @@ async def _stream_events(
 ) -> AsyncIterator[str]:
     """Backlog, then live: replay from ``after_id``, then follow the stream.
 
-    Stops as soon as a terminal execution event is seen or the execution is
-    already terminal -- there is nothing more to wait for, so the connection
-    closes instead of blocking on ``XREAD`` forever.
+    Stops once the execution is confirmed terminal -- there is nothing more to
+    wait for, so the connection closes instead of blocking on ``XREAD`` forever.
     """
     cursor = after_id
     backlog = await app_state.redis.read_events(execution_id, after=after_id, count=10_000)
     for entry in backlog:
         cursor = entry["_id"]
         yield _format_sse(entry)
-        if entry.get("type") in _TERMINAL_STREAM_EVENT_VALUES:
+        if await _looks_finished(execution_id, app_state, entry):
             return
 
     state = await _load_state(execution_id, app_state)
@@ -380,7 +428,7 @@ async def _stream_events(
 
     async for entry in app_state.redis.tail_events(execution_id, last_id=cursor):
         yield _format_sse(entry)
-        if entry.get("type") in _TERMINAL_STREAM_EVENT_VALUES:
+        if await _looks_finished(execution_id, app_state, entry):
             return
 
 

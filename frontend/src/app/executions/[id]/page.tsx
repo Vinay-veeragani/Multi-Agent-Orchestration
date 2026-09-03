@@ -7,6 +7,7 @@ import {
   getExecution,
   getExecutionEvents,
   getExecutionWorkflow,
+  isTerminalStatus,
   listAgentInvocations,
   listPendingApprovals,
   listToolInvocations,
@@ -39,7 +40,7 @@ export default async function ExecutionDetailPage({
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-  const isTerminal = ["succeeded", "failed", "cancelled"].includes(state.status);
+  const isTerminal = isTerminalStatus(state.status);
 
   const [events, workflow, agentInvocations, toolInvocations] = await Promise.all([
     getExecutionEvents(id).catch(() => []),

@@ -322,6 +322,7 @@ class Provider(StrEnum):
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     OLLAMA = "ollama"
+    GROQ = "groq"
 
 
 class ModelCapability(StrEnum):

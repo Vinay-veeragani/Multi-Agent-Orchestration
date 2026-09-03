@@ -52,7 +52,12 @@ async def _client(
     mcp_server_command: str = "",
 ) -> AsyncIterator[httpx.AsyncClient]:
     """A live app, over an in-process ASGI transport, torn down on exit."""
+    # `_env_file=None`: a developer's real `.env` (real provider keys, a
+    # non-mock default provider for manual/live testing) must never leak into
+    # the test suite -- these tests assert mock-only behaviour (demo_mode,
+    # deterministic routing) that a locally configured provider would break.
     settings = Settings(
+        _env_file=None,
         api_require_auth=require_auth,
         api_keys=api_keys,
         mcp_enabled=mcp_enabled,
@@ -108,7 +113,7 @@ class TestHealthAndMetrics:
     async def test_demo_mode_is_false_once_a_real_provider_key_is_configured(
         self, database: Database, redis_coordinator: RedisCoordinator
     ) -> None:
-        settings = Settings(openai_api_key=SecretStr("sk-not-a-real-key"))
+        settings = Settings(_env_file=None, openai_api_key=SecretStr("sk-not-a-real-key"))
         app = create_app(
             settings,
             llm=LLMClient.mock(MockProvider(), sleep=_no_sleep),
@@ -879,6 +884,7 @@ class TestMCPWiring:
 
         (tmp_path / "greeting.txt").write_text("hello mcp\n", encoding="utf-8")
         settings = Settings(
+            _env_file=None,
             mcp_enabled=True,
             mcp_server_command=f"npx -y @modelcontextprotocol/server-filesystem {tmp_path}",
         )

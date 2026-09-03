@@ -165,6 +165,18 @@ GEMINI_PRO = ModelConfig(
     latency_profile="standard",
 )
 
+GROQ_GPT_OSS_120B = ModelConfig(
+    key="gpt-oss-120b-groq",
+    provider=Provider.GROQ,
+    model="openai/gpt-oss-120b",
+    context_limit=131_072,
+    max_output_tokens=32_768,
+    input_cost_per_mtok=0.15,
+    output_cost_per_mtok=0.75,
+    capabilities=frozenset({_CHAT, _STRUCT, _TOOLS, _REASON, _FAST, _CHEAP}),
+    latency_profile="fast",
+)
+
 OPENAI_EMBED_SMALL = ModelConfig(
     key="text-embedding-3-small",
     provider=Provider.OPENAI,
@@ -295,6 +307,7 @@ ALL_MODELS: tuple[ModelConfig, ...] = (
     GPT_4O_MINI,
     GEMINI_FLASH,
     GEMINI_PRO,
+    GROQ_GPT_OSS_120B,
     OPENAI_EMBED_SMALL,
     LLAMA_LOCAL,
     QWEN_LOCAL,
