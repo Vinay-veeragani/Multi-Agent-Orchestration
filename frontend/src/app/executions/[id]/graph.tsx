@@ -93,18 +93,19 @@ export function ExecutionGraph({
     [workflow.edges, liveStatus, initialNodeStatus],
   );
 
-  // The supervisor can answer a simple task directly without ever
-  // delegating -- no agent ran, so the graph is just the seed's lone
-  // terminal node with nothing connected to it. Rendering that as a tiny
-  // box adrift in an otherwise-empty canvas reads as broken, not "nothing
-  // to show"; say so instead.
-  const nothingRan = agentInvocations.length === 0 && workflow.edges.length === 0;
-  if (nothingRan) {
+  // ExecutionWorkspace intercepts the terminal-and-nothing-ran outcome
+  // itself (see its own comment) and never renders this component for it,
+  // so reaching here with no graph activity yet only ever means one thing:
+  // the execution is still running and the supervisor has not made its
+  // first move yet -- there is genuinely nothing to draw, but it is not
+  // finished, either.
+  const nothingYet = agentInvocations.length === 0 && workflow.edges.length === 0;
+  if (nothingYet) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
-        <CircleDashed className="h-5 w-5 text-subtle-foreground" />
+        <CircleDashed className="h-5 w-5 animate-pulse text-subtle-foreground" />
         <p className="max-w-[220px] text-xs text-subtle-foreground">
-          The supervisor answered directly -- no agents were needed for this task.
+          Waiting for the supervisor&apos;s first decision…
         </p>
       </div>
     );
