@@ -8,6 +8,7 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
+import { CircleDashed } from "lucide-react";
 import { useMemo } from "react";
 import type { AgentInvocation, ToolInvocation, WorkflowDetail } from "@/lib/api";
 import { useExecutionStore } from "@/lib/execution-store";
@@ -91,6 +92,23 @@ export function ExecutionGraph({
       })),
     [workflow.edges, liveStatus, initialNodeStatus],
   );
+
+  // The supervisor can answer a simple task directly without ever
+  // delegating -- no agent ran, so the graph is just the seed's lone
+  // terminal node with nothing connected to it. Rendering that as a tiny
+  // box adrift in an otherwise-empty canvas reads as broken, not "nothing
+  // to show"; say so instead.
+  const nothingRan = agentInvocations.length === 0 && workflow.edges.length === 0;
+  if (nothingRan) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
+        <CircleDashed className="h-5 w-5 text-subtle-foreground" />
+        <p className="max-w-[220px] text-xs text-subtle-foreground">
+          The supervisor answered directly -- no agents were needed for this task.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full">

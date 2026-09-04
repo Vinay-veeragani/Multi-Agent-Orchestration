@@ -37,11 +37,11 @@ export function ExecutionWorkspace({
   }
 
   return (
-    <div className="grid h-full grid-cols-1 lg:grid-cols-[1fr_2fr_1fr]">
-      <div className="min-h-0 border-b border-border lg:border-r lg:border-b-0">
+    <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[1fr_2fr_1fr]">
+      <div className="min-h-0 min-w-0 border-b border-border lg:border-r lg:border-b-0">
         <ExecutionTimeline />
       </div>
-      <div className="min-h-[360px] border-b border-border lg:border-r lg:border-b-0">
+      <div className="min-h-[360px] min-w-0 border-b border-border lg:border-r lg:border-b-0">
         <ExecutionGraph
           workflow={workflow}
           initialNodeStatus={initialNodeStatus}
@@ -49,7 +49,7 @@ export function ExecutionWorkspace({
           toolInvocations={toolInvocations}
         />
       </div>
-      <div className="min-h-0">
+      <div className="min-h-0 min-w-0">
         <Inspector
           state={state}
           workflow={workflow}
