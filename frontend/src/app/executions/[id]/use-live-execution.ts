@@ -34,19 +34,37 @@ const MAX_RECONNECT_DELAY_MS = 15000;
  * wasteful for a long-running execution. Tracking the last-seen SSE id here
  * and reopening with `?after_id=` instead resumes exactly where the stream
  * left off.
+ *
+ * `onGenuinelyTerminal` fires exactly once, the moment the status check
+ * above confirms real completion. The live event stream never carries the
+ * actual result -- EXECUTION_COMPLETED's payload is step counts, and a
+ * direct-answer completion emits no event with the final text at all, only
+ * a checkpoint -- so `state`/`agentInvocations`/etc. passed into this page
+ * are a one-time snapshot from whenever it first loaded. The caller uses
+ * this to pull a fresh one (see ExecutionWorkspace's `router.refresh()`)
+ * instead of leaving the answer showing empty until a manual reload.
  */
-export function useLiveExecution(executionId: string, initialEvents: ExecutionEvent[], isTerminal: boolean) {
+export function useLiveExecution(
+  executionId: string,
+  initialEvents: ExecutionEvent[],
+  isTerminal: boolean,
+  onGenuinelyTerminal?: () => void,
+) {
   const seed = useExecutionStore((s) => s.seed);
   const push = useExecutionStore((s) => s.push);
   const setConnection = useExecutionStore((s) => s.setConnection);
   const reset = useExecutionStore((s) => s.reset);
 
-  // A ref, not an effect dependency: `initialEvents` is a fresh array
-  // identity every render, but it should only be read once, at the moment
-  // this hook (re)connects for a given execution.
+  // Refs, not effect dependencies: `initialEvents` is a fresh array identity
+  // every render, and an inline `onGenuinelyTerminal` callback would be too
+  // -- both should only be read at the moment they are actually needed, not
+  // force the connection effect below to tear down and reconnect every
+  // render just because the caller passed a new closure.
   const initialEventsRef = useRef(initialEvents);
+  const onGenuinelyTerminalRef = useRef(onGenuinelyTerminal);
   useEffect(() => {
     initialEventsRef.current = initialEvents;
+    onGenuinelyTerminalRef.current = onGenuinelyTerminal;
   });
 
   useEffect(() => {
@@ -80,6 +98,7 @@ export function useLiveExecution(executionId: string, initialEvents: ExecutionEv
           if (body.isTerminal) {
             stopped = true;
             setConnection("closed");
+            onGenuinelyTerminalRef.current?.();
             return;
           }
         }

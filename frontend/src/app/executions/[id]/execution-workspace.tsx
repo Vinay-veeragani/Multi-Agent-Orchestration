@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type {
   AgentInvocation,
   ExecutionEvent,
@@ -31,7 +32,15 @@ export function ExecutionWorkspace({
   agentInvocations: AgentInvocation[];
   toolInvocations: ToolInvocation[];
 }) {
-  useLiveExecution(executionId, initialEvents, isTerminal);
+  const router = useRouter();
+  // `state`/`agentInvocations`/`isTerminal` etc. are a one-time snapshot from
+  // whenever this page first loaded -- see useLiveExecution's own docstring
+  // for why the live event stream cannot fill in a completion's actual
+  // result. Refreshing (a soft, data-only re-fetch of this same server
+  // component, not a reload) the moment the client confirms the execution
+  // genuinely finished is what makes the final answer/budget/status appear
+  // on their own instead of needing a manual reload.
+  useLiveExecution(executionId, initialEvents, isTerminal, () => router.refresh());
 
   const initialNodeStatus: Record<string, string> = {};
   for (const [nodeId, node] of Object.entries(state.node_states)) {
