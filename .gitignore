@@ -34,3 +34,7 @@ benchmarks/results/*.local.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- local Redis-compatible server run directly from the repo root ---
+dump.rdb
+memurai-log.txt

@@ -46,6 +46,14 @@ function elapsed(startedAt: string | null, at: string): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// Types whose icon is an animated "in progress" spinner -- see ICONS above.
+// A node gets retried (node_started/agent_invoked fire again with the same
+// node_id), so an earlier occurrence of one of these is only genuinely
+// still in progress if nothing *later* for that same node has arrived yet;
+// otherwise it is a past attempt that has since moved on, and spinning it
+// forever reads as "this is still running" when it plainly is not.
+const IN_PROGRESS_TYPES = new Set(["node_started", "agent_invoked", "tool_invoked"]);
+
 export function ExecutionTimeline() {
   const events = useExecutionStore((s) => s.events);
   const connection = useExecutionStore((s) => s.connection);
@@ -53,6 +61,11 @@ export function ExecutionTimeline() {
   const selectNode = useExecutionStore((s) => s.selectNode);
   const [expanded, setExpanded] = useState<string | null>(null);
   const startedAt = events[0]?.created_at ?? null;
+
+  const lastIndexForNode = new Map<string, number>();
+  events.forEach((event, index) => {
+    if (event.node_id) lastIndexForNode.set(event.node_id, index);
+  });
 
   return (
     <div className="flex h-full flex-col">
@@ -75,8 +88,14 @@ export function ExecutionTimeline() {
         {events.length === 0 && (
           <li className="px-3 py-4 text-xs text-subtle-foreground">Waiting for events&hellip;</li>
         )}
-        {events.map((event) => {
-          const meta = ICONS[event.type] ?? { icon: CircleDashed, className: "text-muted-foreground" };
+        {events.map((event, index) => {
+          const superseded =
+            IN_PROGRESS_TYPES.has(event.type) &&
+            event.node_id != null &&
+            lastIndexForNode.get(event.node_id) !== index;
+          const meta = superseded
+            ? { icon: CircleDashed, className: "text-subtle-foreground" }
+            : (ICONS[event.type] ?? { icon: CircleDashed, className: "text-muted-foreground" });
           const Icon = meta.icon;
           const isExpanded = expanded === event.id;
           const hasPayload = event.payload && Object.keys(event.payload).length > 0;
