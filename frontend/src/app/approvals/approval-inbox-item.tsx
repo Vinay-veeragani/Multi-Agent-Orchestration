@@ -41,7 +41,7 @@ export function ApprovalInboxItem({ item }: { item: PendingApprovalItem }) {
       <p className="mt-2 font-mono text-xs text-foreground">{item.action}</p>
       <p className="mt-1 text-xs text-muted-foreground">{item.risk_reason}</p>
       {Object.keys(item.parameters).length > 0 && (
-        <pre className="mt-2 overflow-x-auto rounded bg-black/30 p-2 text-xs text-muted-foreground">
+        <pre className="mt-2 overflow-x-auto rounded bg-surface p-2 text-xs text-muted-foreground">
           {JSON.stringify(item.parameters, null, 2)}
         </pre>
       )}
@@ -56,7 +56,7 @@ export function ApprovalInboxItem({ item }: { item: PendingApprovalItem }) {
             name="by"
             required
             disabled={busy}
-            className="h-8 rounded border border-border-strong bg-black/20 px-2 text-sm text-foreground outline-none focus:border-approval"
+            className="h-8 rounded border border-border-strong bg-surface px-2 text-sm text-foreground outline-none focus:border-approval"
           />
         </div>
         <div className="flex flex-col">
@@ -67,7 +67,7 @@ export function ApprovalInboxItem({ item }: { item: PendingApprovalItem }) {
             id={`note-${item.id}`}
             name="note"
             disabled={busy}
-            className="h-8 rounded border border-border-strong bg-black/20 px-2 text-sm text-foreground outline-none focus:border-approval"
+            className="h-8 rounded border border-border-strong bg-surface px-2 text-sm text-foreground outline-none focus:border-approval"
           />
         </div>
         <Button

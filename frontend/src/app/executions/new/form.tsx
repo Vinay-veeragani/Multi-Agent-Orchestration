@@ -21,7 +21,7 @@ export function NewExecutionForm() {
           required
           rows={3}
           placeholder="e.g. compare CRM vendors on pricing"
-          className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
+          className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
         />
       </div>
 
@@ -33,7 +33,7 @@ export function NewExecutionForm() {
           id="success_criteria"
           name="success_criteria"
           rows={2}
-          className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
+          className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
         />
       </div>
 

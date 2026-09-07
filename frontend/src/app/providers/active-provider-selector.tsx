@@ -60,7 +60,7 @@ export function ActiveProviderSelector({
               setValue(event.target.value);
               formRef.current?.requestSubmit();
             }}
-            className="h-8 rounded-md border border-border-strong bg-black/20 px-2 text-sm text-foreground outline-none focus:border-primary"
+            className="h-8 rounded-md border border-border-strong bg-surface px-2 text-sm text-foreground outline-none focus:border-primary"
           >
             <option value="">Automatic</option>
             {connected.map((provider) => (

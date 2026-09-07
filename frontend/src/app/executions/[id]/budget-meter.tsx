@@ -12,7 +12,7 @@ function Bar({ used, max, label, unit }: { used: number; max: number | null; lab
           {unit}
         </span>
       </div>
-      <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-border">
         {pct != null && (
           <div
             className={`h-full rounded-full ${pct > 85 ? "bg-danger" : pct > 60 ? "bg-warning" : "bg-primary"}`}

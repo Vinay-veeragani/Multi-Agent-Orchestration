@@ -128,7 +128,7 @@ export function ExecutionTimeline() {
                     </span>
                   )}
                   {isExpanded && hasPayload && (
-                    <pre className="mt-1.5 overflow-x-auto rounded bg-black/40 p-2 text-[10px] text-muted-foreground">
+                    <pre className="mt-1.5 overflow-x-auto rounded bg-surface p-2 text-[10px] text-muted-foreground">
                       {JSON.stringify(event.payload, null, 2)}
                     </pre>
                   )}

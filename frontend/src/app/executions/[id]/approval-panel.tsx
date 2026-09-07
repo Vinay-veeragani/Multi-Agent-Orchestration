@@ -34,7 +34,7 @@ export function ApprovalPanel({
       <p className="mt-2 font-mono text-xs text-foreground">{approval.action}</p>
       <p className="mt-1 text-xs text-muted-foreground">{approval.risk_reason}</p>
       {Object.keys(approval.parameters).length > 0 && (
-        <pre className="mt-2 overflow-x-auto rounded bg-black/30 p-2 text-xs text-muted-foreground">
+        <pre className="mt-2 overflow-x-auto rounded bg-surface p-2 text-xs text-muted-foreground">
           {JSON.stringify(approval.parameters, null, 2)}
         </pre>
       )}
@@ -49,7 +49,7 @@ export function ApprovalPanel({
             name="by"
             required
             disabled={busy}
-            className="h-8 rounded border border-border-strong bg-black/20 px-2 text-sm text-foreground outline-none focus:border-approval"
+            className="h-8 rounded border border-border-strong bg-surface px-2 text-sm text-foreground outline-none focus:border-approval"
           />
         </div>
         <div className="flex flex-col">
@@ -60,7 +60,7 @@ export function ApprovalPanel({
             id="note"
             name="note"
             disabled={busy}
-            className="h-8 rounded border border-border-strong bg-black/20 px-2 text-sm text-foreground outline-none focus:border-approval"
+            className="h-8 rounded border border-border-strong bg-surface px-2 text-sm text-foreground outline-none focus:border-approval"
           />
         </div>
         <Button

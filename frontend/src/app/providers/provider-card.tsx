@@ -69,7 +69,7 @@ export function ProviderCard({
                 autoComplete="off"
                 placeholder={provider.masked_api_key ?? "Paste your API key"}
                 disabled={saving}
-                className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
+                className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
               />
             </div>
 
@@ -91,7 +91,7 @@ export function ProviderCard({
                     type="text"
                     placeholder={provider.base_url ?? ""}
                     disabled={saving}
-                    className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary"
+                    className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary"
                   />
                 </div>
 
@@ -108,7 +108,7 @@ export function ProviderCard({
                       name="selected_model_key"
                       defaultValue={provider.selected_model_key ?? ""}
                       disabled={saving}
-                      className="mt-1 block w-full rounded-md border border-border-strong bg-black/20 px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
+                      className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary"
                     >
                       <option value="">Auto</option>
                       {provider.models.map((model) => (
