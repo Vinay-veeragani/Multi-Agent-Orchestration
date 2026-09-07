@@ -228,6 +228,19 @@ class ExecutionOrchestrator:
 
             outcome = await self._supervisor.decide(state, workflow=current)
             decision = outcome.decision
+            # The supervisor's own routing/answering call spends real tokens
+            # and money even when it never delegates to an agent -- a
+            # direct-answer turn is the clearest case, where this is the
+            # *only* LLM call the whole execution makes. Without recording it
+            # here, the budget meter (fed otherwise only by the executor's
+            # agent/tool invocations) would report an execution that spent
+            # nothing when it plainly did.
+            if outcome.attempts:
+                self._meter.record_llm_usage(
+                    input_tokens=sum(a.input_tokens for a in outcome.attempts),
+                    output_tokens=sum(a.output_tokens for a in outcome.attempts),
+                    cost_usd=outcome.total_cost_usd,
+                )
             await self._events.emit(
                 EventType.SUPERVISOR_DECIDED,
                 message=decision.reason,
