@@ -1151,3 +1151,9 @@ AI Engineer focused on:
 * Computer Vision
 * AI Evaluation
 * Production-oriented AI Engineering
+
+---
+
+# License
+
+Apache License 2.0 -- see [`LICENSE`](LICENSE).
