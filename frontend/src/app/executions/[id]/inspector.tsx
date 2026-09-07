@@ -9,6 +9,7 @@ import type {
 } from "@/lib/api";
 import { useExecutionStore } from "@/lib/execution-store";
 import { Badge, statusVariant } from "@/components/ui/badge";
+import { Markdown } from "@/components/ui/markdown";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BudgetMeter } from "./budget-meter";
 import { SupervisorDecisionPanel } from "./supervisor-decision";
@@ -53,7 +54,7 @@ export function Inspector({
         {state.final_output && (
           <div className="rounded-md border border-border bg-surface p-3">
             <div className="mb-1.5 text-xs font-medium text-muted-foreground">Final result</div>
-            <p className="text-sm whitespace-pre-wrap text-foreground">{state.final_output}</p>
+            <Markdown>{state.final_output}</Markdown>
           </div>
         )}
       </div>
@@ -96,7 +97,7 @@ export function Inspector({
 
         <TabsContent value="output">
           {output ? (
-            <pre className="overflow-x-auto rounded bg-black/40 p-2.5 text-xs text-muted-foreground">
+            <pre className="overflow-x-auto rounded bg-surface p-2.5 text-xs text-muted-foreground">
               {JSON.stringify(output, null, 2)}
             </pre>
           ) : (

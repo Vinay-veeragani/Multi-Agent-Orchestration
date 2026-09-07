@@ -8,6 +8,7 @@ import type {
   ToolInvocation,
   WorkflowDetail,
 } from "@/lib/api";
+import { Markdown } from "@/components/ui/markdown";
 import { BudgetMeter } from "./budget-meter";
 import { ExecutionGraph } from "./graph";
 import { Inspector } from "./inspector";
@@ -59,9 +60,11 @@ export function ExecutionWorkspace({
       <div className="mx-auto h-full max-w-2xl overflow-y-auto px-6 py-8">
         <div className="rounded-md border border-border bg-surface p-5">
           <div className="mb-2 text-xs font-medium text-muted-foreground">Answer</div>
-          <p className="text-base leading-relaxed whitespace-pre-wrap text-foreground">
-            {state.final_output || "No output was produced."}
-          </p>
+          {state.final_output ? (
+            <Markdown className="text-base">{state.final_output}</Markdown>
+          ) : (
+            <p className="text-base leading-relaxed text-foreground">No output was produced.</p>
+          )}
         </div>
 
         <div className="mt-4">
